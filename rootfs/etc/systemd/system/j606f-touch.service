@@ -1,0 +1,15 @@
+[Unit]
+Description=Re-probe Himax HX83102E touch after the panel/regulators are up
+# On this tablet the TDDI touch chip only answers after the panel driver has
+# initialised the shared chip; a cold parallel probe fails with -9 ("chip NOT
+# found"). Reloading the module once the system is up always works.
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'modprobe -r himax_hx83102e 2>/dev/null; sleep 1; modprobe himax_hx83102e'
+
+[Install]
+WantedBy=multi-user.target

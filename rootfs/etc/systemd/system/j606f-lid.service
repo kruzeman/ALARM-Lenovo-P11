@@ -1,0 +1,19 @@
+[Unit]
+Description=Lenovo TB-J606F cover (Hall sensor, tlmm 36) -> suspend
+Documentation=man:systemd.special(7)
+After=multi-user.target
+# Only meaningful once the graphical session is up; a suspend during early boot
+# just delays the boot.
+ConditionPathExists=/dev/gpiochip0
+
+[Service]
+Type=simple
+# GPIO 36 is the Hall switch: closing the cover drives it low (confirmed by
+# gpiomon: falling on close, rising on open). libgpiod here is v1, hence -c.
+ExecStart=/usr/bin/sh -c 'exec stdbuf -oL gpiomon -c gpiochip0 -e falling 36 | while read -r ev; do logger -t j606f-lid "cover closed: $ev"; systemctl suspend; done'
+Restart=always
+RestartSec=3
+Nice=-5
+
+[Install]
+WantedBy=graphical.target

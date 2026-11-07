@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-bind Lenovo TB-J606F pogo dock HID devices after resume
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/j606f-hid-rebind.sh
+TimeoutStartSec=60
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target

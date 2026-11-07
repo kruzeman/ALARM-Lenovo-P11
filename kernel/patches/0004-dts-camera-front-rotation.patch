@@ -1,0 +1,17 @@
+diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-camera.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-camera.dtsi
+index 802df2053..adfb19918 100644
+--- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-camera.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-camera.dtsi
+@@ -189,8 +189,10 @@ camera@10 {
+ 		vddd-supply = <&cam_vdig>;
+ 
+ 		orientation = <0>;
+-		/* stock sensor-position-roll */
+-		rotation = <270>;
++		/* stock sensor-position-roll is 270, but the raw stream from this
++		 * module already comes out upright; the app was applying 270 on top
++		 * and showing the preview sideways. */
++		rotation = <0>;
+ 
+ 		port {
+ 			cam_front_ep: endpoint {

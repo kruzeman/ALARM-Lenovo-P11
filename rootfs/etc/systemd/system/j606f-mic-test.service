@@ -1,0 +1,13 @@
+[Unit]
+Description=ES7210 capture autotest (one shot at boot)
+After=sound.target systemd-udev-settle.service
+Wants=sound.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mic-test.sh
+TimeoutStartSec=120
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

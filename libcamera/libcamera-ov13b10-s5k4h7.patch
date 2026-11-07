@@ -1,0 +1,35 @@
+diff --git a/src/ipa/libipa/camera_sensor_helper.cpp b/src/ipa/libipa/camera_sensor_helper.cpp
+index 9457d62..d9cbdc3 100644
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -781,6 +781,30 @@ public:
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("ov5693", CameraSensorHelperOv5693)
+ 
++/* OV13B10: analogue gain register 0x80 == 1x, step 1/128 */
++class CameraSensorHelperOv13b10 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperOv13b10()
++	{
++		blackLevel_ = 1024;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 128 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("ov13b10", CameraSensorHelperOv13b10)
++
++/* S5K4H7: analogue gain register 0x20 == 1x, step 1/32 */
++class CameraSensorHelperS5k4h7 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperS5k4h7()
++	{
++		blackLevel_ = 1024;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 32 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("s5k4h7", CameraSensorHelperS5k4h7)
++
+ class CameraSensorHelperOv64a40 : public CameraSensorHelper
+ {
+ public:

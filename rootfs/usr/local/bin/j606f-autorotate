@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Auto-rotate the Lenovo TB-J606F display from the SSC accelerometer.
+
+iio-sensor-proxy's SSC accelerometer driver never delivers samples on this
+device with libssc 0.4.x (the light sensor works), so the accelerometer is read
+through ssccli and the rotation applied with kscreen-doctor.
+
+Anchors were measured by holding the tablet still in each position and
+averaging the gravity vector in sensor coordinates (identity mount matrix):
+
+    Measured on hardware: with the tablet held still at angle 3.5 the correct
+    transform was "left" (kscreen rotation 90); a 180 there was the visible
+    90-degree error. The rest follows by quarter turns (device turned CCW by
+    one step needs one more clockwise step of the content):
+
+        angle   3.5 -> left (90)
+        angle  93.5 -> inverted (180)
+        angle 183.5 -> right (270)
+        angle 273.5 -> normal (0)
+
+Switching is deliberately conservative: a position must be held steady (small
+spread over the last few samples) for several consecutive decisions, otherwise
+the hand passing through intermediate angles flips the screen mid-rotation.
+"""
+import collections
+import math
+import os
+import re
+import statistics
+import subprocess
+import sys
+import time
+
+OUTPUT = os.environ.get("J606F_OUTPUT", "DSI-1")
+ANCHORS = [(3.5, 90), (93.5, 180), (183.5, 270), (273.5, 0)]
+ROTATION_NAME = {0: "normal", 90: "left", 180: "inverted", 270: "right"}
+SAMPLE_WINDOW = 5          # readings averaged into one angle
+ANGLE_HISTORY = 6          # decisions kept for the stability check
+MAX_SPREAD_DEG = 12.0      # larger spread => the tablet is being moved
+STABLE_DECISIONS = 3       # identical anchors in a row before acting
+FLAT_LIMIT = 4.0           # in-plane gravity below this => lying flat, keep rotation
+LINE_RE = re.compile(r"X=(-?\d+\.?\d*)\s+Y=(-?\d+\.?\d*)\s+Z=(-?\d+\.?\d*)")
+
+
+def log(msg):
+    print(f"j606f-autorotate: {msg}", flush=True)
+
+
+def angle_distance(a, b):
+    d = abs((a - b) % 360.0)
+    return min(d, 360.0 - d)
+
+
+def spread(values):
+    if len(values) < 2:
+        return 0.0
+    mean = statistics.fmean(values)
+    return statistics.fmean([angle_distance(v, mean) for v in values])
+
+
+def set_rotation(deg):
+    """kscreen-doctor wants the keyword form: output.<name>.rotation.<normal|left|inverted|right>."""
+    try:
+        res = subprocess.run(["kscreen-doctor", f"output.{OUTPUT}.rotation.{ROTATION_NAME[deg]}"],
+                             capture_output=True, text=True, timeout=15)
+        if "Could not set" in (res.stdout + res.stderr):
+            log(f"kscreen-doctor rejected {deg}: {(res.stdout + res.stderr).strip()[:120]}")
+        else:
+            log(f"rotation -> {deg} ({ROTATION_NAME[deg]})")
+    except Exception as exc:
+        log(f"kscreen-doctor failed: {exc}")
+
+
+def main():
+    log(f"starting, output={OUTPUT}")
+    applied = None
+    history = collections.deque(maxlen=ANGLE_HISTORY)
+    pending, streak = None, 0
+
+    while True:
+        proc = subprocess.Popen(["ssccli", "--sensor", "accelerometer", "--timeout", "86400"],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        window = []
+        try:
+            for line in proc.stdout:
+                m = LINE_RE.search(line)
+                if not m:
+                    continue
+                window.append((float(m.group(1)), float(m.group(2))))
+                if len(window) < SAMPLE_WINDOW:
+                    continue
+                ax = sum(w[0] for w in window) / len(window)
+                ay = sum(w[1] for w in window) / len(window)
+                window.clear()
+
+                if math.hypot(ax, ay) < FLAT_LIMIT:
+                    history.clear()
+                    pending, streak = None, 0
+                    continue
+
+                angle = math.degrees(math.atan2(ay, ax)) % 360.0
+                history.append(angle)
+                if len(history) < ANGLE_HISTORY or spread(history) > MAX_SPREAD_DEG:
+                    pending, streak = None, 0
+                    continue
+
+                center = statistics.fmean(history)
+                best = min(ANCHORS, key=lambda a: angle_distance(center, a[0]))
+                if angle_distance(center, best[0]) > MAX_SPREAD_DEG:
+                    pending, streak = None, 0
+                    continue
+
+                if best[1] == pending:
+                    streak += 1
+                else:
+                    pending, streak = best[1], 1
+
+                if streak >= STABLE_DECISIONS and best[1] != applied:
+                    log(f"angle={center:.0f} (x={ax:.1f} y={ay:.1f}) -> rotation {best[1]}")
+                    set_rotation(best[1])
+                    applied = best[1]
+        except Exception as exc:
+            log(f"stream ended: {exc}")
+        finally:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        time.sleep(3)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)

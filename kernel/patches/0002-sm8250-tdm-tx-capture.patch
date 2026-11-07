@@ -1,0 +1,54 @@
+diff --git a/sound/soc/qcom/sm8250.c b/sound/soc/qcom/sm8250.c
+index a2fc1316f..9998b1e10 100644
+--- a/sound/soc/qcom/sm8250.c
++++ b/sound/soc/qcom/sm8250.c
+@@ -22,6 +22,7 @@
+ #define TDM_BCLK_RATE		(48000 * TDM_SLOTS * TDM_SLOT_WIDTH)
+ 
+ static const unsigned int tdm_slot_offset[] = { 0, 4 };
++static const unsigned int tdm_tx_slot_offset[] = { 0, 4, 8, 12 };
+ 
+ struct sm8250_snd_data {
+ 	bool stream_prepared[AFE_PORT_MAX];
+@@ -68,9 +69,15 @@ static int sm8250_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+ 	struct snd_interval *channels = hw_param_interval(params,
+ 					SNDRV_PCM_HW_PARAM_CHANNELS);
+ 	struct snd_mask *fmt = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
++	struct snd_soc_dai *cpu_dai;
+ 
+ 	rate->min = rate->max = 48000;
+-	channels->min = channels->max = 2;
++	/* The ES7210 is a four-channel ADC and the TDM frame has four slots:
++	 * the capture link has to expose all four channels, the playback links
++	 * stay stereo.
++	 */
++	cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++	channels->min = channels->max = (cpu_dai && cpu_dai->id == PRIMARY_TDM_TX_0) ? 4 : 2;
+ 	snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
+ 
+ 	return 0;
+@@ -126,6 +133,24 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
+ 					    ARRAY_SIZE(tdm_slot_offset),
+ 					    tdm_slot_offset);
+ 		break;
++	case PRIMARY_TDM_TX_0:
++		/* Built-in microphones: the ES7210 ADC streams into the TX half of
++		 * the same primary TDM port the speakers use, so it runs on the same
++		 * 48 kHz / 32-bit / 4-slot frame; the ADC occupies slots 0 and 1.
++		 */
++		snd_soc_dai_set_sysclk(cpu_dai, Q6AFE_LPASS_CLK_ID_PRI_TDM_IBIT,
++				       TDM_BCLK_RATE, SNDRV_PCM_STREAM_CAPTURE);
++		/* TX dai ids are odd, so q6afe takes the slot mask from tx_mask;
++		 * passing 0 here leaves the port with no slots and the DMA faults.
++		 */
++		snd_soc_dai_set_tdm_slot(cpu_dai, GENMASK(3, 0), 0,
++					 TDM_SLOTS, TDM_SLOT_WIDTH);
++		/* The ADSP rejects a TDM port whose channel map is not set:
++		 * four mics occupy all four slots of the frame.
++		 */
++		snd_soc_dai_set_channel_map(cpu_dai, ARRAY_SIZE(tdm_tx_slot_offset),
++					    tdm_tx_slot_offset, 0, NULL);
++		break;
+ 	default:
+ 		break;
+ 	}

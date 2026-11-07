@@ -1,0 +1,41 @@
+#!/bin/busybox sh
+# Minimal init for Arch on the TB-J606F: no mkinitcpio, no udev — just mount the
+# root filesystem that lives directly on the userdata partition and hand over.
+# Everything is built into the initramfs (static busybox), so there is nothing
+# to load from the filesystems below.
+/bin/busybox --install -s /bin
+
+say() { echo "arch-init: $*" > /dev/kmsg; echo "arch-init: $*" > /dev/tty0 2>/dev/null; }
+
+say "starting (kernel $(cat /proc/version | cut -d' ' -f3))"
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev 2>/dev/null
+mkdir -p /new_root
+
+DEV=/dev/sda15
+i=0
+while [ ! -b "$DEV" ] && [ $i -lt 40 ]; do
+    i=$((i + 1))
+    sleep 0.5
+done
+
+if [ ! -b "$DEV" ]; then
+    say "ERROR: $DEV not present"
+else
+    say "mounting $DEV"
+    if mount -o rw "$DEV" /new_root; then
+        say "root mounted, top level: $(ls /new_root | tr '\n' ' ')"
+        if [ -x /new_root/sbin/init ] || [ -L /new_root/sbin/init ]; then
+            say "switching root"
+            exec switch_root /new_root /sbin/init
+        else
+            say "ERROR: /sbin/init missing on the new root"
+        fi
+    else
+        say "ERROR: mount $DEV failed"
+    fi
+fi
+
+say "dropping to a shell"
+exec /bin/sh
