@@ -1,32 +1,32 @@
 # Bluetooth
 
-Контроллер — Qualcomm **WCN3990** (QCA), UART, прошивки `crbtfw21.tlv` / `crnv21.bin` в
-`/lib/firmware/qca/`. Драйверы: `hci_uart`, `btqca`, `btqca` грузит прошивку из `/lib/firmware`.
+Controller: Qualcomm **WCN3990** (QCA) over UART, firmware `crbtfw21.tlv` / `crnv21.bin` in
+`/lib/firmware/qca/`. Drivers: `hci_uart`, `btqca` (loads the firmware).
 
-## Что понадобилось
+## What was needed
 
-1. Пакеты: `bluez`, `bluez-utils` (проверено на bluez 5.87).
-2. **Стабильный BD-адрес.** У WCN3990 нет своего адреса в прошивке, а драйвер помечает
-   `BDADDR_PROPERTY_BROKEN`; без адреса контроллер поднимается нестабильно. В DT (патч 0001):
+1. Packages: `bluez`, `bluez-utils` (tested with bluez 5.87).
+2. **A stable BD address.** The WCN3990 has no address in firmware and the driver flags it with
+   `BDADDR_PROPERTY_BROKEN`; without an address the controller comes up unreliably. In the DT (patch 0001):
 
    ```dts
    bluetooth {
            compatible = "qcom,wcn3990-bt";
-           /* ядро байт-свапает свойство: читается как 02:00:00:00:60:6f */
+           /* the kernel byte-swaps the property: reads back as 02:00:00:00:60:6f */
            local-bd-address = [6f 60 00 00 00 02];
    };
    ```
 
-3. Проверка:
+3. Verify:
 
    ```bash
    hciconfig hci0        # STATE UP RUNNING, BD Address 02:00:00:00:60:6F
    bluetoothctl show
    ```
 
-## Диагностика
+## Diagnosing
 
-Классические симптомы при отсутствии адреса/несовпадении прошивки:
+Typical failure mode without a proper address or with a mismatched firmware:
 
 ```
 Bluetooth: hci0: AOSP extensions version v0.98
@@ -35,8 +35,7 @@ Bluetooth: hci0: QCA pre shutdown cmd
 Bluetooth: hci0: err 0x13
 ```
 
-`err 0x13` — таймаут инициализации: проверяй, что `local-bd-address` задан и модуль `btqca`
-загружается после `hci_uart` (порядок обеспечивает udev по modalias).
+`err 0x13` is an initialisation timeout: check that `local-bd-address` is present and that `btqca` is loaded
+after `hci_uart` (udev orders them by modalias).
 
-Аудио по Bluetooth (A2DP/HFP) отдельно не проверялось: профили зависят от PipeWire/bluez, а не от
-ядра.
+Bluetooth audio (A2DP/HFP) has not been tested: those profiles depend on PipeWire/bluez, not on the kernel.

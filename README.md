@@ -1,84 +1,95 @@
-# Arch Linux ARM на Lenovo Tab P11 (TB-J606F)
+# Arch Linux ARM on the Lenovo Tab P11 (TB-J606F)
 
-Собственный набор для запуска **Arch Linux ARM** на планшете **Lenovo Tab P11 TB-J606F**
-(Qualcomm Snapdragon 662 / SM6115 «bengal», 4 ГБ ОЗУ, панель 1200×2000, пого-док с клавиатурой и тачпадом).
+A custom setup that runs **Arch Linux ARM** on the **Lenovo Tab P11 TB-J606F**
+(Qualcomm Snapdragon 662 / SM6115 "bengal", 4 GB RAM, 1200×2000 panel, pogo keyboard dock).
 
-Основа — mainline-порт [sm61x5-mainline/linux](https://codeberg.org/sm61x5-mainline/linux) (тег `v7.2.3-r0`)
-и наработки [Yar1klamer/j606f-postmarketos](https://github.com/Yar1klamer/j606f-postmarketos).
-Здесь лежит то, что сделано поверх: собственные патчи ядра, драйвер кодека ES7210, правки DTB,
-libcamera-патч для камер, минимальный initramfs, конфиги и сервисы для Arch.
+Built on top of the mainline port [sm61x5-mainline/linux](https://codeberg.org/sm61x5-mainline/linux)
+(tag `v7.2.3-r0`) and [Yar1klamer/j606f-postmarketos](https://github.com/Yar1klamer/j606f-postmarketos).
+This repository holds everything done on top: own kernel patches, an ES7210 codec driver, device-tree
+fixes, a libcamera patch for the cameras, a minimal initramfs and the Arch-side configuration.
 
-## Что работает
+*Русская версия: [README.ru.md](README.ru.md), документация: [docs/ru/](docs/ru/).*
 
-| Устройство | Статус | Комментарий |
+## Status
+
+| Device | State | Notes |
 |---|---|---|
-| Загрузка (A/B, `boot_b`) | ✅ | своё ядро `7.2.3-sm61x5-hermes`, минимальный initramfs |
-| Экран (Himax HX83102P, DSI) | ✅ | яркость через `/sys/class/backlight`, панель смонтирована «вверх ногами» (`rotation = 180`) |
-| Тачскрин (Himax HX83102E) | ✅ | нужны `rmtfs`, `tqftpserv`, `pd-mapper`; сервис `j606f-touch` |
-| Пого-док: клавиатура и тачпад | ✅ | `hid-over-i2c`, IRQ GPIO 93/96; переподключение после сна — `j606f-hid-resume` |
-| Wi-Fi (WCN3990 / ath10k_snoc) | ✅ | нужны `qrtr`, `rmtfs`, `tqftpserv`, `pd-mapper` |
-| Bluetooth (QCA) | ✅ | стабильный BD-адрес задаётся в DTB (`local-bd-address`) |
-| Динамики (4× AW88258) | ✅ | PRIMARY_TDM_RX_0, стерео, UCM-профиль |
-| Разъём USB-C / гарнитура | ⚠️ | WCD937x + SoundWire поднимаются, но аналоговый выход идёт через FSA4480 — не реализовано |
-| Камеры (OV13B10 + S5K4H7) | ⚠️ | обе снимают; фронтальная повёрнута правильно (после правки DTB), задняя без автофокуса |
-| Встроенные микрофоны (ES7210) | ❌ | драйвер кодека готов, DSP отвергает TDM-TX порт (`-22`), см. `docs/audio.md` |
-| Сон (`s2idle`) | ✅ | пробуждение по Power; сон по закрытию чехла — `j606f-lid` (Hall-сенсор, gpiochip0 36) |
-| Автоповорот | ✅ | демон `j606f-autorotate` поверх `ssccli` (SSC/ADSP) |
-| Датчик света | ✅ | LTR578 через SSC, `iio-sensor-proxy` видит `HasAmbientLight` |
-| Батарея | ✅ | `mm8013` + `upower` |
+| Boot (A/B, `boot_b`) | ✅ | custom kernel `7.2.3-sm61x5-hermes`, minimal initramfs |
+| Display (Himax HX83102P, DSI) | ✅ | brightness via `/sys/class/backlight`, panel mounted upside down (`rotation = 180`) |
+| Touchscreen (Himax HX83102E) | ✅ | needs `rmtfs`, `tqftpserv`, `pd-mapper`; `j606f-touch` service |
+| Pogo dock: keyboard + touchpad | ✅ | `hid-over-i2c`, IRQs on GPIO 93/96; `j606f-hid-resume` re-binds them after suspend |
+| Wi-Fi (WCN3990 / ath10k_snoc) | ✅ | needs `qrtr`, `rmtfs`, `tqftpserv`, `pd-mapper` |
+| Bluetooth (QCA) | ✅ | stable BD address comes from the device tree (`local-bd-address`) |
+| Speakers (4× AW88258) | ✅ | PRIMARY_TDM_RX_0, stereo, UCM profile |
+| USB-C / headset | ⚠️ | WCD937x + SoundWire come up, but the analogue path goes through an FSA4480 switch — not implemented |
+| Cameras (OV13B10 + S5K4H7) | ⚠️ | both capture; front orientation fixed in DT, rear has no autofocus |
+| Built-in microphones (ES7210) | ❌ | codec driver is ready, the DSP rejects the TDM-TX port (`-22`), see `docs/audio.md` |
+| Suspend (`s2idle`) | ✅ | wake with Power; lid-close suspend via `j606f-lid` (Hall sensor, gpiochip0 line 36) |
+| Auto-rotate | ✅ | `j606f-autorotate` daemon on top of `ssccli` (SSC/ADSP) |
+| Ambient light | ✅ | LTR578 through SSC, `iio-sensor-proxy` reports `HasAmbientLight` |
+| Battery | ✅ | `mm8013` + `upower` |
 | zram | ✅ | `zram-generator`, zstd, `ram / 2` |
 
-## Что лежит в репозитории
+## Prebuilt image
 
-```
-kernel/patches/     патчи к дереву sm61x5-mainline/linux (v7.2.3-r0)
-  0001-…            DTB: аудио (ES7210 + TDM TX) и BD-адрес Bluetooth
-  0002-…            sm8250.c: capture-линк на PRIMARY_TDM_TX_0
-  0003-…            драйвер кодека ES7210 (sound/soc/codecs/es7210.c)
-  0004-…            DTB: поворот фронтальной камеры
-boot/               сборка boot-образа (mkboot.py) и минимальный initramfs
-rootfs/             файлы для системы: systemd-сервисы, UCM, конфиги WirePlumber/zram,
-                    скрипты (автоповорот, переподключение HID, тест микрофона)
-libcamera/          патч libcamera 0.7.2: sensor helper'ы для OV13B10 и S5K4H7 (работает АЭ)
-tools/              утилиты для DTB: patch_dts.py, fdtread.py
-docs/               подробности по каждому узлу
+[Releases](../../releases) contain a tested boot image (`boot-arch-j606f-good.img`): sound (speakers),
+Wi-Fi, Bluetooth, touch, pogo dock, cameras, suspend and auto-rotate work; the ES7210 microphones are
+disabled. Flash it with:
+
+```bash
+fastboot flash boot_b boot-arch-j606f-good.img
 ```
 
-## Готовый образ
+## Layout
 
-В [releases](../../releases) лежит проверенный boot-образ (`boot-arch-j606f-good.img`):
-звук (динамики), Wi-Fi, Bluetooth, тач, пого-док, камеры, сон и автоповорот работают,
-микрофоны ES7210 выключены. Прошивка: `fastboot flash boot_b boot-arch-j606f-good.img`.
+```
+kernel/patches/     patches against sm61x5-mainline/linux (v7.2.3-r0)
+  0001-…            DT: audio (ES7210 + TDM TX) and Bluetooth BD address
+  0002-…            sm8250.c: capture link on PRIMARY_TDM_TX_0
+  0003-…            ES7210 codec driver (sound/soc/codecs/es7210.c)
+  0004-…            DT: front camera rotation
+boot/               boot image builder (mkboot.py) and the minimal initramfs
+rootfs/             system files: systemd services, UCM, WirePlumber/zram configs,
+                    scripts (auto-rotate, HID re-bind, microphone test)
+libcamera/          libcamera 0.7.2 patch: sensor helpers for OV13B10 and S5K4H7
+tools/              device-tree helpers: patch_dts.py, fdtread.py
+docs/               per-device notes (English; Russian under docs/ru/)
+```
 
-## Быстрый старт
+## Quick start
 
-1. Прочитать `docs/install.md` — там разметка разделов, сборка образа и первый запуск.
-2. Собрать ядро и DTB:
+1. Read `docs/install.md` — partitioning, image build and first boot.
+2. Build the kernel and DTBs:
+
    ```bash
    git clone --depth 1 --branch v7.2.3-r0 https://codeberg.org/sm61x5-mainline/linux.git
    cd linux
    for p in /path/to/repo/kernel/patches/*.patch; do git apply "$p"; done
+   cp /path/to/repo/kernel/config-nura-qcom-sm61x5.aarch64 .config
+   make ARCH=arm64 LLVM=1 olddefconfig
    make ARCH=arm64 LLVM=1 KERNELRELEASE=7.2.3-sm61x5-hermes -j$(nproc) Image.gz modules dtbs
    ```
-3. Собрать boot-образ: `boot/build-boot.sh` (нужны `Image.gz`, `dtb`, initramfs).
-4. Скопировать `rootfs/*` в систему, включить сервисы (`docs/install.md`).
 
-## Известные проблемы
+3. Build the boot image with `boot/build-boot.sh`.
+4. Copy `rootfs/*` into the system and enable the services (`docs/install.md`).
 
-- **Микрофоны**: DSP отвечает `AFE enable for port 0x9001 failed -22` на любой конфигурации порта
-  (2/4 канала, маски `0x3`/`0xF`, с картой каналов и без). Нужно сверять таблицу AFE-портов прошивки ADSP
-  и проверять, не висят ли микрофоны на второй шине LPI I2S2 (`lpi_i2s2_*` в стоковом DTB).
-- **Задняя камера**: автофокуса нет (libcamera simple-pipeline не умеет AF для этого сенсора);
-  VCM `dw9719` управляется вручную через `/dev/v4l-subdev*` (`focus_absolute`), но привод запитан только
-  во время стрима.
-- **USB-C аналоговый звук**: нужен драйвер FSA4480.
-- **`power_supply` oops**: в этом ядре иногда возникает `Internal error: Oops - CFI` в
-  `power_supply_changed_work` (батарея/зарядка) — к аудио и камерам отношения не имеет, но может подвесить
-  систему; лечится перезагрузкой.
+## Known issues
 
-## Благодарности
+- **Microphones**: the DSP answers `AFE enable for port 0x9001 failed -22` for every port configuration
+  tried (2/4 channels, slot masks `0x3`/`0xF`, with and without a channel map). Next step is to compare
+  against the ADSP firmware's AFE port table and to check whether the mics actually sit on the second
+  LPASS bus (`lpi_i2s2_*` exists in the stock DT next to the `lpass-tdm1-*` pins used by the speakers).
+- **Rear camera**: no autofocus (libcamera's simple pipeline has no AF for this sensor). The `dw9719` VCM
+  can be driven by hand through `/dev/v4l-subdev*` (`focus_absolute`), but it is only powered while
+  streaming.
+- **USB-C analogue audio**: needs an FSA4480 driver.
+- **`power_supply` oops**: this kernel occasionally raises `Internal error: Oops - CFI` in
+  `power_supply_changed_work` (battery/charger). Unrelated to audio or cameras, but it can wedge the
+  system; a reboot clears it.
 
-- [sm61x5-mainline](https://codeberg.org/sm61x5-mainline/linux) — mainline-порт для SM6115/SM4250.
-- [Yar1klamer/j606f-postmarketos](https://github.com/Yar1klamer/j606f-postmarketos) — первоначальный порт
-  для этого планшета (DTB, драйверы усилителей, документация по железу).
-- Команде libcamera — за простой пайплайн и понятный код сенсорных хелперов.
+## Credits
+
+- [sm61x5-mainline](https://codeberg.org/sm61x5-mainline/linux) — mainline port for SM6115/SM4250.
+- [Yar1klamer/j606f-postmarketos](https://github.com/Yar1klamer/j606f-postmarketos) — the original port for
+  this tablet (DTB, amplifier drivers, hardware notes).
+- The libcamera team — for a readable simple pipeline and sensor-helper framework.

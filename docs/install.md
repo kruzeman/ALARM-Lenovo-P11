@@ -1,31 +1,31 @@
-# Установка
+# Installation
 
-Всё делалось на самом планшете (Arch ARM ставится в раздел `userdata`), загрузчик — штатный ABL.
-`boot_b` содержит наш boot-образ, Android не нужен.
+Everything was done on the tablet itself (Arch ARM is installed into the `userdata` partition); the boot
+loader is the stock ABL. `boot_b` holds our boot image, Android is not required.
 
-## 1. Разметка
+## 1. Partitions
 
-| Раздел | Устройство | Что там |
+| Partition | Device | Contents |
 |---|---|---|
-| `userdata` | `/dev/sda15` (label `archroot`) | корень Arch Linux ARM, ext4 |
-| `boot_b` | `/dev/disk/by-partlabel/boot_b` | наш boot-образ (v2) |
-| `persist` | `/dev/sda2` | сенсоры/калибровки — **не трогать** |
-| `dsp_b` | `/dev/sde29` | прошивка ADSP — **не трогать** |
+| `userdata` | `/dev/sda15` (label `archroot`) | Arch Linux ARM root, ext4 |
+| `boot_b` | `/dev/disk/by-partlabel/boot_b` | our boot image (Android v2) |
+| `persist` | `/dev/sda2` | sensors/calibration — **do not touch** |
+| `dsp_b` | `/dev/sde29` | ADSP firmware — **do not touch** |
 
-Резервные копии `boot_b` перед экспериментами обязательны: `fastboot` — единственный способ
-восстановиться, если образ не загрузится.
+Always keep a backup of `boot_b` before experimenting: fastboot is the only way back if an image does not
+boot.
 
-## 2. Корневая система
+## 2. Root filesystem
 
 ```bash
-# на планшете, из recovery/fastboot-boot окружения или с другого хоста
+# on the tablet, from a recovery/fastboot-booted environment or another host
 mkfs.ext4 -L archroot /dev/sda15
 mount /dev/sda15 /mnt
 tar -xpf ArchLinuxARM-aarch64-latest.tar.gz -C /mnt
 ```
 
-Дальше — обычная настройка Arch (ключи pacman, `NetworkManager`, `openssh`, пользователь, `sudo`),
-плюс пакеты, без которых не работают узлы:
+Then a normal Arch setup (pacman keys, `NetworkManager`, `openssh`, a user, `sudo`), plus the packages the
+hardware needs:
 
 ```bash
 pacman -S --needed base-devel openssh networkmanager sudo nano vim htop \
@@ -35,29 +35,27 @@ pacman -S --needed base-devel openssh networkmanager sudo nano vim htop \
 # AUR: qrtr rmtfs tqftpserv pd-mapper hexagonrpcd
 ```
 
-`qrtr`, `rmtfs`, `tqftpserv`, `pd-mapper` обязательны: без них не поднимаются Wi-Fi, тачскрин и часть
-ADSP-периферии.
+`qrtr`, `rmtfs`, `tqftpserv` and `pd-mapper` are mandatory: without them Wi-Fi, the touchscreen and part of
+the ADSP peripherals never come up.
 
-## 3. Ядро
+## 3. Kernel
 
 ```bash
 git clone --depth 1 --branch v7.2.3-r0 https://codeberg.org/sm61x5-mainline/linux.git
 cd linux
 for p in /path/to/repo/kernel/patches/*.patch; do git apply "$p"; done
-cp /path/to/config-nura-qcom-sm61x5.aarch64 .config
+cp /path/to/repo/kernel/config-nura-qcom-sm61x5.aarch64 .config
 make ARCH=arm64 LLVM=1 olddefconfig
 make ARCH=arm64 LLVM=1 KERNELRELEASE=7.2.3-sm61x5-hermes -j$(nproc) Image.gz modules dtbs
 make ARCH=arm64 LLVM=1 KERNELRELEASE=7.2.3-sm61x5-hermes modules_install
 depmod -a 7.2.3-sm61x5-hermes
 ```
 
-`KERNELRELEASE` нужен, чтобы каталог модулей совпадал с `uname -r` (localversion в `.config` при этом
-перекрывается).
+`KERNELRELEASE` makes the module directory match `uname -r` (it overrides the localversion in `.config`).
 
-## 4. initramfs и boot-образ
+## 4. initramfs and boot image
 
-Минимальный initramfs — статический busybox, который монтирует корень и делает `switch_root`
-(`boot/mininit-init`):
+The initramfs is a static busybox that mounts the root and does `switch_root` (`boot/mininit-init`):
 
 ```
 mount -t proc none /proc
@@ -67,49 +65,36 @@ mount /dev/sda15 /newroot
 exec switch_root /newroot /sbin/init
 ```
 
-Образ собирается `boot/mkboot.py` (Android boot image v2):
+The image is built by `boot/mkboot.py` (Android boot image v2), or simply:
 
 ```bash
-python3 boot/mkboot.py --ref stock.img \
-  --kernel arch/arm64/boot/Image.gz \
-  --ramdisk mininit.img \
-  --dtb arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-hx83102p.dtb \
-  --cmdline "console=tty0 fbcon=rotate:2 clk_ignore_unused pd_ignore_unused root=/dev/sda15 rw loglevel=7" \
-  --out boot-arch.img
+./boot/build-boot.sh arch/arm64/boot/Image.gz \
+  arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-hx83102p.dtb
 ```
 
-Прошивка (с ноутбука, планшет в fastboot — Power ~15 с, затем Громкость− + Power):
+Flashing (from a laptop, tablet in fastboot — hold Power ~15 s, then Volume Down + Power):
 
 ```bash
 fastboot flash boot_b boot-arch.img
 fastboot reboot
 ```
 
-## 5. После первого запуска
+## 5. After the first boot
 
 ```bash
-# сервисы из rootfs/
-install -m644 rootfs/etc/systemd/system/j606f-*.service /etc/systemd/system/
-install -m755 rootfs/usr/local/bin/j606f-* /usr/local/bin/
-install -Dm644 rootfs/etc/wireplumber/wireplumber.conf.d/51-j606f-nommap.conf \
-  /etc/wireplumber/wireplumber.conf.d/51-j606f-nommap.conf
-install -Dm644 rootfs/etc/systemd/zram-generator.conf /etc/systemd/zram-generator.conf
-install -Dm644 rootfs/etc/sysctl.d/99-zram.conf /etc/sysctl.d/99-zram.conf
-install -Dm644 rootfs/etc/modules-load.d/j606f.conf /etc/modules-load.d/j606f.conf
-install -Dm644 rootfs/ucm/Lenovo-TB-J606F.conf /usr/share/alsa/ucm2/conf.d/sm4250/Lenovo-TB-J606F.conf
-install -Dm644 rootfs/ucm/HiFi.conf /usr/share/alsa/ucm2/Lenovo/TB-J606F/HiFi.conf
-
-systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm
-systemctl set-default graphical.target
+cd /path/to/repo && ./rootfs/install.sh
 ```
 
-## Если планшет не загрузился
+That installs the services and configuration files and enables `j606f-touch`, `j606f-lid`,
+`j606f-hid-resume`, `upower`, `bluetooth` and `sddm`.
 
-Симптомы — чёрный экран, «буковки», бесконечная перезагрузка. Действия:
+## If it does not boot
 
-1. Выключить (Power ~15 с), зайти в fastboot (Громкость− + Power).
-2. Прошить последний рабочий образ: `fastboot flash boot_b good.img && fastboot reboot`.
-3. Не пытаться «переждать» цикл перезагрузок — только возврат образа.
+Symptoms: black screen, garbled text, reboot loop. What to do:
 
-Проверенный порядок отладки: сначала загрузиться с рабочим DTB, потом менять один узел за раз и
-сравнивать `dtc -I dtb -O dts` старого и нового дерева (см. `tools/patch_dts.py`).
+1. Power off (hold Power ~15 s), enter fastboot (Volume Down + Power).
+2. Flash the last known-good image: `fastboot flash boot_b good.img && fastboot reboot`.
+3. Never "wait out" a reboot loop — restore the image.
+
+A proven debugging order: boot with a working DT first, then change one node at a time and compare
+`dtc -I dtb -O dts` output of the old and new tree (see `tools/patch_dts.py`).

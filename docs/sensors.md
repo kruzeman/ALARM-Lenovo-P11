@@ -1,47 +1,47 @@
-# Сенсоры, автоповорот, датчик света
+# Sensors, auto-rotate, ambient light
 
-## Как поднимается SSC (Snapdragon Sensor Core)
+## How SSC (Snapdragon Sensor Core) comes up
 
-Датчики живут в ADSP и доступны через SSC:
+The sensors live in the ADSP and are exposed through SSC:
 
-1. Прошивка/конфиги ADSP и реестр сенсоров в `/usr/share/qcom/sm6115/LENOVO/J606F/`
-   (`dsp/adsp`, `sensors/config`, `sensors/registry`, `socinfo`) — берутся из стоковых разделов
-   `persist` (`/dev/sda2`) и `dsp_b` (`/dev/sde29`), их нельзя стирать.
-2. `hexagonrpcd` (AUR) c drop-in'ами для `hexagonrpcd-adsp-rootpd` и `hexagonrpcd-adsp-sensorspd`
-   (`-f /dev/fastrpc-adsp -d adsp -R $RPC`), каталог прошивки — в `/etc/conf.d/hexagonrpcd-*`.
-3. Проверка:
+1. ADSP firmware and the sensor registry live in `/usr/share/qcom/sm6115/LENOVO/J606F/` (`dsp/adsp`,
+   `sensors/config`, `sensors/registry`, `socinfo`) and come from the stock `persist` (`/dev/sda2`) and
+   `dsp_b` (`/dev/sde29`) partitions — never wipe those.
+2. `hexagonrpcd` (AUR) with drop-ins for `hexagonrpcd-adsp-rootpd` and `hexagonrpcd-adsp-sensorspd`
+   (`-f /dev/fastrpc-adsp -d adsp -R $RPC`); firmware path in `/etc/conf.d/hexagonrpcd-*`.
+3. Verify:
 
    ```bash
    ssccli --sensor accelerometer --timeout 5
-   ssccli --sensor light --timeout 5          # ~15 люкс в комнате
+   ssccli --sensor light --timeout 5          # ~15 lux indoors
    monitor-sensor                            # iio-sensor-proxy: HasAmbientLight = true
    ```
 
-## Автоповорот
+## Auto-rotate
 
-`iio-sensor-proxy` акселерометр через SSC не видит, поэтому поворотом управляет свой демон
-`j606f-autorotate` (пользовательский systemd-юнит): читает `ssccli --sensor accelerometer` и вызывает
+`iio-sensor-proxy` never sees the accelerometer through SSC, so rotation is driven by a small daemon,
+`j606f-autorotate` (a user systemd unit): it reads `ssccli --sensor accelerometer` and calls
 `kscreen-doctor output.DSI-1.rotation.<normal|left|inverted|right>`.
 
-Калибровочные якоря (угол наклона в градусах → поворот экрана):
+Calibration anchors (tilt angle in degrees → screen rotation):
 
 ```
 (3.5, 90), (93.5, 180), (183.5, 270), (273.5, 0)
 ```
 
-Панель смонтирована «вверх ногами» (`rotation = <180>` в DTB), тач при этом отдаёт координаты корпуса —
-поэтому автоповорот и ориентация панели независимы.
+The panel is mounted upside down (`rotation = <180>` in the DT) while the touchscreen reports chassis
+coordinates — that is why panel orientation and auto-rotate are independent.
 
-`kscreen-doctor` нужно вызывать с правильным сокетом:
+`kscreen-doctor` needs the right socket:
 
 ```bash
 export XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-1 \
        DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 ```
 
-## Датчик света и подсветка
+## Ambient light and backlight
 
-- Датчик: **Lite-On LTR578** через SSC (`ssccli --sensor light`), работает штатно.
-- Подсветка: `/sys/class/backlight/5e94000.dsi.0` (0…4095), обычный sysfs.
-- Автояркость в KDE: PowerDevil 6.8 не умеет ambient light, поэтому автоподсветку нужно делать своим
-  демоном (lux → brightness с гистерезисом). Датчик и подсветка для этого уже готовы.
+- Sensor: **Lite-On LTR578** through SSC (`ssccli --sensor light`), works out of the box.
+- Backlight: `/sys/class/backlight/5e94000.dsi.0` (0…4095), a plain sysfs device.
+- KDE auto-brightness: PowerDevil 6.8 has no ambient-light support, so adaptive brightness needs a small
+  daemon (lux → brightness with hysteresis). Sensor and backlight are already available for it.

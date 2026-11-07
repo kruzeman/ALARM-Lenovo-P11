@@ -1,35 +1,33 @@
-# Камеры
+# Cameras
 
-Сенсоры:
-
-| | Модель | I²C | Разрешение | Особенности |
+| | Sensor | I²C | Resolution | Notes |
 |---|---|---|---|---|
-| Задняя | OV13B10 | cci0 bus0 `0x10` | 4200×3120 | VCM `dw9719` (`0x0c`, focus_absolute 0…1023) |
-| Передняя | S5K4H7 | cci1 bus1 `0x10` | 3256×2448 | data-lanes 4, MCLK 24 МГц |
+| Rear | OV13B10 | cci0 bus0 `0x10` | 4200×3120 | VCM `dw9719` (`0x0c`, `focus_absolute` 0…1023) |
+| Front | S5K4H7 | cci1 bus1 `0x10` | 3256×2448 | 4 data lanes, MCLK 24 MHz |
 
-Драйверы сенсоров (`ov13b10`, `s5k4h7`), `qcom_camss`/`cci` и VCM приходят из порта ядра.
-Пользовательский слой — **libcamera** («simple» pipeline, uncalibrated IPA).
+The sensor drivers (`ov13b10`, `s5k4h7`), `qcom_camss`/`cci` and the VCM come from the kernel port. The
+user-space side is **libcamera** ("simple" pipeline, uncalibrated IPA).
 
-## Проверка
+## Checking
 
 ```bash
-cam -l                                    # список камер
-cam -c 1 --capture=3 --file=/tmp/f.ppm    # индексы меняются между загрузками — смотри cam -l
+cam -l                                    # list cameras
+cam -c 1 --capture=3 --file=/tmp/f.ppm    # indices change between boots — always read cam -l
 ```
 
-`/dev/video12` — декодер Venus (H.264/VP9/HEVC), `/dev/video13` — энкодер.
+`/dev/video12` is the Venus decoder (H.264/VP9/HEVC), `/dev/video13` the encoder.
 
-## Патч libcamera (обязателен для экспозиции)
+## libcamera patch (required for exposure)
 
-Без него в логе:
+Without it the log says:
 
 ```
 WARN IPASoft soft_simple.cpp:104 IPASoft: Failed to create camera sensor helper for ov13b10
 ```
 
-и кадры чёрные/тёмные: программному IPA нечего опереться, чтобы управлять экспозицией и усилением.
-Патч `libcamera/libcamera-ov13b10-s5k4h7.patch` добавляет в `src/ipa/libipa/camera_sensor_helper.cpp`
-два хелпера по константам из драйверов сенсоров:
+and frames come out black or very dark: the soft IPA has no way to drive exposure and gain. The patch
+`libcamera/libcamera-ov13b10-s5k4h7.patch` adds two helpers to
+`src/ipa/libipa/camera_sensor_helper.cpp`, using the constants from the sensor drivers:
 
 ```cpp
 /* OV13B10: gain 0x80 == 1x, step 1/128 */
@@ -38,7 +36,7 @@ gain_ = AnalogueGainLinear{ 1, 0, 0, 128 };  blackLevel_ = 1024;
 gain_ = AnalogueGainLinear{ 1, 0, 0, 32 };   blackLevel_ = 1024;
 ```
 
-Сборка (на планшете, ~15 минут при `-j4`, иначе KWin «задыхается» и экран чернеет):
+Building (on the tablet, ~15 minutes at `-j4`; at `-j8` KWin is starved and the screen goes black):
 
 ```bash
 git clone --depth 1 --branch v0.7.2 https://github.com/libcamera-org/libcamera.git
@@ -49,31 +47,30 @@ meson setup build --buildtype=release -Dpipelines=simple,uvcvideo -Dipas=simple 
   -Dandroid=disabled -Dcpp_args="-Wno-error -Wno-array-bounds"
 nice -n 19 ionice -c3 ninja -C build -j4
 meson install -C build --destdir /tmp/lcstage
-# заменить /usr/lib/libcamera.so.0.7.2, libcamera-base.so.0.7.2 и libcamera/ipa/ipa_soft_simple.so
+# replace /usr/lib/libcamera.so.0.7.2, libcamera-base.so.0.7.2 and libcamera/ipa/ipa_soft_simple.so
 ```
 
-(В свежем GCC сборка падает на `-Werror=array-bounds` в `log.cpp` — отсюда `-Wno-error`.)
+(With a current GCC the build fails on `-Werror=array-bounds` in `log.cpp` — hence `-Wno-error`.)
 
-## Поворот фронтальной камеры
+## Front camera orientation
 
-В DTB сенсор был помечен `rotation = <270>` (из стокового `sensor-position-roll`), но поток с этого
-модуля уже приходит прямым, и приложение поворачивало его второй раз — превью было боком.
-Патч 0004 ставит `rotation = <0>`.
+The DT marked the sensor as `rotation = <270>` (taken from the stock `sensor-position-roll`), but the
+stream from this module already arrives upright, so applications rotated it a second time and the preview
+was sideways. Patch 0004 sets `rotation = <0>`.
 
-## Задняя камера: автофокуса нет
+## Rear camera: no autofocus
 
-- libcamera simple-pipeline не реализует AF, поэтому привод не трогается.
-- VCM доступен вручную: `/dev/v4l-subdev*` с именем `dw9719`, контрол `focus_absolute` (0…1023).
-- Привод **запитан только во время стрима**: вне потока запись падает с `dw9719: Error writing reg
-  0x0002: -6`, поэтому свипы фокуса нужно делать внутри одного потока (в кадре виден момент, когда
-  привод получает питание).
-- Свип по контрасту в потоке даёт пик около **focus ≈ 384**, но картинка остаётся мягкой — либо дистанция
-  вне хода линзы, либо модуль просто мягкий. Метрика: средняя |вторая производная| по центральному кропу,
-  нормированная на яркость.
-- GUI: `plasma-camera` (KDE, через libcamera).
+- libcamera's simple pipeline implements no AF, so the actuator is never touched.
+- The VCM is reachable manually: the `/dev/v4l-subdev*` named `dw9719`, control `focus_absolute` (0…1023).
+- The actuator is **only powered while streaming**: outside a stream writes fail with
+  `dw9719: Error writing reg 0x0002: -6`, so focus sweeps must happen inside one stream.
+- A contrast sweep inside a stream peaks around **focus ≈ 384**, but the picture stays soft — either the
+  subject is outside the lens travel or the module is simply soft. Metric used: mean |second derivative|
+  over a central crop, normalised by brightness.
+- GUI: `plasma-camera` (KDE, libcamera based).
 
-## Известные ограничения
+## Known limitations
 
-- Цветопередача «зелёная» — следствие ненастроенного IPA (нет калибровочных tuning-файлов для этих
-  сенсоров). Лечится сборкой tuning-данных, а не настройками.
-- Задняя камера на 4–7 fps в 13 МП (столько успевает пайплайн), фронтальная — 30 fps.
+- The greenish colour cast comes from the uncalibrated IPA (there are no tuning files for these sensors);
+  it needs tuning data, not settings.
+- The rear camera manages 4–7 fps at 13 MP (that is the pipeline throughput), the front one 30 fps.
