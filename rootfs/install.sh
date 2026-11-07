@@ -5,10 +5,9 @@ set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 install -m644 "$HERE"/etc/systemd/system/j606f-*.service /etc/systemd/system/
-install -m644 "$HERE"/etc/systemd/system/sddm-greeter-rotate.service /etc/systemd/system/
 install -m755 "$HERE"/usr/local/bin/j606f-* /usr/local/bin/
 install -m755 "$HERE"/usr/local/bin/mic-test.sh /usr/local/bin/ 2>/dev/null || true
-install -m755 "$HERE"/usr/local/bin/sddm-greeter-rotate.sh /usr/local/bin/
+install -m755 "$HERE"/usr/local/bin/sddm-x11-rotate.sh /usr/local/bin/
 
 install -Dm644 "$HERE/etc/wireplumber/wireplumber.conf.d/51-j606f-nommap.conf" \
 	/etc/wireplumber/wireplumber.conf.d/51-j606f-nommap.conf
@@ -20,14 +19,13 @@ install -Dm644 "$HERE/ucm/Lenovo-TB-J606F.conf" \
 	/usr/share/alsa/ucm2/conf.d/sm4250/Lenovo-TB-J606F.conf
 install -Dm644 "$HERE/ucm/HiFi.conf" /usr/share/alsa/ucm2/Lenovo/TB-J606F/HiFi.conf
 
-# SDDM: Wayland-greeter (KWin). Xorg не используется вообще.
-install -Dm644 "$HERE/etc/sddm.conf.d/10-wayland.conf" /etc/sddm.conf.d/10-wayland.conf
+# SDDM: greeter — X11 (Xorg), рабочий стол — Wayland.
+# Wayland-греeter (kwin_wayland под sddm) на этом устройстве нестабилен: падает с SEGV и оставляет
+# висящие сессии, из-за которых вход зависает. Для X11-греeter'а нужен пакет xorg-xrandr.
+install -Dm644 "$HERE/etc/sddm.conf.d/20-x11.conf" /etc/sddm.conf.d/20-x11.conf
 
 systemctl daemon-reload
-systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm sddm-greeter-rotate
+systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm
 systemctl set-default graphical.target
-
-# Первичный поворот greeter'а (дальше его держит sddm-greeter-rotate.service)
-/usr/local/bin/sddm-greeter-rotate.sh || true
 
 echo "готово; перезагрузись и проверь systemctl --failed"

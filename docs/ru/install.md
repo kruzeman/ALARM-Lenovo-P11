@@ -114,34 +114,23 @@ systemctl set-default graphical.target
 Проверенный порядок отладки: сначала загрузиться с рабочим DTB, потом менять один узел за раз и
 сравнивать `dtc -I dtb -O dts` старого и нового дерева (см. `tools/patch_dts.py`).
 
+## Экран входа (SDDM на X11, рабочий стол на Wayland)
 
-## Экран входа (SDDM на Wayland)
-
-Greeter работает на **kwin_wayland**, а не на Xorg: `rootfs/etc/sddm.conf.d/10-wayland.conf`
+Greeter работает на Xorg с поворотом через `xrandr`; сессия Plasma — на Wayland (`plasma.desktop` в
+`/usr/share/wayland-sessions`). `rootfs/etc/sddm.conf.d/20-x11.conf`:
 
 ```ini
-[General]
-DisplayServer=wayland
-GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
-
-[Wayland]
-CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1
+[X11]
+DisplayCommand=/usr/local/bin/sddm-x11-rotate.sh
 ```
 
-Для Qt-плагина Wayland нужны `qt6-wayland` и `qt6-svg`.
+`rootfs/usr/local/bin/sddm-x11-rotate.sh` ждёт готовности X и выполняет
+`xrandr --output DSI-1 --rotate left`: панель портретная (1200×2000), а планшет используется в альбомном
+доке. Нужен пакет `xorg-xrandr`.
 
-Панель портретная (1200×2000), а планшет стоит в доке альбомно — поэтому greeter'у нужен явный поворот.
-KWin хранит его в `/var/lib/sddm/.config/kwinoutputconfig.json` (`"transform": "Rotated90"`), но этот файл
-перезаписывается, когда KWin не находит EDID у `DSI-1`, поэтому `sddm-greeter-rotate.service` применяет
-поворот после каждого старта:
-
-```bash
-sudo -u sddm env XDG_RUNTIME_DIR=/run/user/$(id -u sddm) WAYLAND_DISPLAY=wayland-0 \
-  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u sddm)/bus \
-  kscreen-doctor output.DSI-1.rotation.left
-```
-
-`kscreen-doctor` здесь работает против «голого» `kwin_wayland` — именно поэтому схема возможна.
-
-Замечание: пакет `sddm` в Arch жёстко зависит от `xorg-server`, так что пакет остаётся в системе, но
-процесс Xorg не запускается никогда — в `ps` только `kwin_wayland`, `sddm` и `sddm-greeter-qt`.
+Почему не Wayland-греeter: `kwin_wayland`, запущенный SDDM под пользователем `sddm`, здесь нестабилен —
+в логе `kwin_core: Failed to take control of ... session. Maybe another compositor is running?`, падение с
+`SEGV`, а после нескольких перезапусков SDDM остаются висеть старые сессии пользователя, которые держат
+DRM-мастер, и следующий вход зависает после пароля (`startplasma-wayland` стартует, `plasmashell` не
+появляется). Разовая чистка (`loginctl terminate-session`) помогает, но греeter продолжает падать.
+Стабильной оказалась схема Xorg для экрана входа + Wayland для сессии.

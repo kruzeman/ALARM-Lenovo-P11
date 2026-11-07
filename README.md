@@ -26,6 +26,7 @@ fixes, a libcamera patch for the cameras, a minimal initramfs and the Arch-side 
 | Built-in microphones (ES7210) | ❌ | codec driver is ready, the DSP rejects the TDM-TX port (`-22`), see `docs/audio.md` |
 | Suspend (`s2idle`) | ✅ | wake with Power; lid-close suspend via `j606f-lid` (Hall sensor, gpiochip0 line 36) |
 | Auto-rotate | ✅ | `j606f-autorotate` daemon on top of `ssccli` (SSC/ADSP) |
+| Login screen | ✅ | SDDM greeter on Xorg (rotate via `xrandr`), Plasma session on Wayland |
 | Ambient light | ✅ | LTR578 through SSC, `iio-sensor-proxy` reports `HasAmbientLight` |
 | Battery | ✅ | `mm8013` + `upower` |
 | zram | ✅ | `zram-generator`, zstd, `ram / 2` |

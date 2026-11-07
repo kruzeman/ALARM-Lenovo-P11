@@ -26,6 +26,7 @@ libcamera-патч для камер, минимальный initramfs, конф
 | Встроенные микрофоны (ES7210) | ❌ | драйвер кодека готов, DSP отвергает TDM-TX порт (`-22`), см. `docs/ru/audio.md` |
 | Сон (`s2idle`) | ✅ | пробуждение по Power; сон по закрытию чехла — `j606f-lid` (Hall-сенсор, gpiochip0 36) |
 | Автоповорот | ✅ | демон `j606f-autorotate` поверх `ssccli` (SSC/ADSP) |
+| Экран входа | ✅ | greeter SDDM на Xorg (поворот через `xrandr`), сессия Plasma — Wayland |
 | Датчик света | ✅ | LTR578 через SSC, `iio-sensor-proxy` видит `HasAmbientLight` |
 | Батарея | ✅ | `mm8013` + `upower` |
 | zram | ✅ | `zram-generator`, zstd, `ram / 2` |
