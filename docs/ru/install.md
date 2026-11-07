@@ -103,6 +103,11 @@ systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm
 systemctl set-default graphical.target
 ```
 
+## Опционально: тюнинг рабочего стола
+
+`rootfs/usr/local/bin/j606f-kde-tune.sh` (запускать от имени пользователя) отключает тяжёлые эффекты
+KWin и индексатор Baloo; замеры — в `docs/performance.md`, `docs/ru/performance.md`.
+
 ## Если планшет не загрузился
 
 Симптомы — чёрный экран, «буковки», бесконечная перезагрузка. Действия:

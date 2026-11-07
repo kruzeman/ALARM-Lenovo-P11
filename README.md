@@ -54,7 +54,8 @@ rootfs/             system files: systemd services, UCM, WirePlumber/zram config
                     scripts (auto-rotate, HID re-bind, microphone test)
 libcamera/          libcamera 0.7.2 patch: sensor helpers for OV13B10 and S5K4H7
 tools/              device-tree helpers: patch_dts.py, fdtread.py
-docs/               per-device notes (English; Russian under docs/ru/)
+docs/               per-device notes (English; Russian under docs/ru/): install, audio, cameras,
+                    bluetooth, power, sensors, performance
 ```
 
 ## Quick start

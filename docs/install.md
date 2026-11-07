@@ -88,6 +88,11 @@ cd /path/to/repo && ./rootfs/install.sh
 That installs the services and configuration files and enables `j606f-touch`, `j606f-lid`,
 `j606f-hid-resume`, `upower`, `bluetooth` and `sddm`.
 
+## Optional: desktop tuning
+
+`rootfs/usr/local/bin/j606f-kde-tune.sh` (run as the desktop user) disables the heavy KWin effects and
+the Baloo indexer; see `docs/performance.md` for measurements.
+
 ## If it does not boot
 
 Symptoms: black screen, garbled text, reboot loop. What to do:

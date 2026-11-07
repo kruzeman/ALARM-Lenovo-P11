@@ -44,7 +44,8 @@ rootfs/             файлы для системы: systemd-сервисы, UC
                     скрипты (автоповорот, переподключение HID, тест микрофона)
 libcamera/          патч libcamera 0.7.2: sensor helper'ы для OV13B10 и S5K4H7 (работает АЭ)
 tools/              утилиты для DTB: patch_dts.py, fdtread.py
-docs/               подробности по каждому узлу
+docs/               подробности по каждому узлу: install, audio, cameras, bluetooth, power,
+                    sensors, performance
 ```
 
 ## Готовый образ
