@@ -98,3 +98,35 @@ Symptoms: black screen, garbled text, reboot loop. What to do:
 
 A proven debugging order: boot with a working DT first, then change one node at a time and compare
 `dtc -I dtb -O dts` output of the old and new tree (see `tools/patch_dts.py`).
+
+
+## Login screen (SDDM on Wayland)
+
+The greeter runs on **kwin_wayland**, not Xorg: `rootfs/etc/sddm.conf.d/10-wayland.conf`
+
+```ini
+[General]
+DisplayServer=wayland
+GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
+
+[Wayland]
+CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1
+```
+
+`qt6-wayland` and `qt6-svg` are required for the Qt Wayland platform plugin.
+
+The panel is portrait (1200×2000) and sits in a landscape dock, so the greeter needs an explicit
+rotation. KWin keeps it in `/var/lib/sddm/.config/kwinoutputconfig.json` (`"transform": "Rotated90"`),
+but that file is rewritten when KWin cannot read an EDID for `DSI-1`, so
+`sddm-greeter-rotate.service` re-applies the rotation after every start:
+
+```bash
+sudo -u sddm env XDG_RUNTIME_DIR=/run/user/$(id -u sddm) WAYLAND_DISPLAY=wayland-0 \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u sddm)/bus \
+  kscreen-doctor output.DSI-1.rotation.left
+```
+
+`kscreen-doctor` works against a bare `kwin_wayland` here, which is what makes this possible.
+
+Note: Arch's `sddm` package hard-depends on `xorg-server`, so the package stays installed, but no Xorg
+process is ever started — `ps` shows only `kwin_wayland`, `sddm` and `sddm-greeter-qt`.

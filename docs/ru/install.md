@@ -113,3 +113,35 @@ systemctl set-default graphical.target
 
 Проверенный порядок отладки: сначала загрузиться с рабочим DTB, потом менять один узел за раз и
 сравнивать `dtc -I dtb -O dts` старого и нового дерева (см. `tools/patch_dts.py`).
+
+
+## Экран входа (SDDM на Wayland)
+
+Greeter работает на **kwin_wayland**, а не на Xorg: `rootfs/etc/sddm.conf.d/10-wayland.conf`
+
+```ini
+[General]
+DisplayServer=wayland
+GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
+
+[Wayland]
+CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1
+```
+
+Для Qt-плагина Wayland нужны `qt6-wayland` и `qt6-svg`.
+
+Панель портретная (1200×2000), а планшет стоит в доке альбомно — поэтому greeter'у нужен явный поворот.
+KWin хранит его в `/var/lib/sddm/.config/kwinoutputconfig.json` (`"transform": "Rotated90"`), но этот файл
+перезаписывается, когда KWin не находит EDID у `DSI-1`, поэтому `sddm-greeter-rotate.service` применяет
+поворот после каждого старта:
+
+```bash
+sudo -u sddm env XDG_RUNTIME_DIR=/run/user/$(id -u sddm) WAYLAND_DISPLAY=wayland-0 \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u sddm)/bus \
+  kscreen-doctor output.DSI-1.rotation.left
+```
+
+`kscreen-doctor` здесь работает против «голого» `kwin_wayland` — именно поэтому схема возможна.
+
+Замечание: пакет `sddm` в Arch жёстко зависит от `xorg-server`, так что пакет остаётся в системе, но
+процесс Xorg не запускается никогда — в `ps` только `kwin_wayland`, `sddm` и `sddm-greeter-qt`.
