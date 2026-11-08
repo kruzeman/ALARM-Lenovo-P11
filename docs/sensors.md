@@ -63,6 +63,8 @@ light (`kscreen-doctor output.DSI-1.brightness.NN`) and KWin stores points in
 `~/.config/kwinoutputconfig.json` (`autoBrightnessCurve`). After that it interpolates on its own
 (measured: 108 lux -> 80%, covered sensor at 0.37 lux -> 40%, both animated).
 
-`iio-sensor-proxy` must stay disabled: it grabs the SSC sensor and then delivers nothing.
+`iio-sensor-proxy` must stay **masked** (`systemctl mask iio-sensor-proxy`): plain `disable` is not
+enough, because KWin activates it over D-Bus, it grabs `net.hadess.SensorProxy` first and then
+delivers nothing.
 `j606f-als-brightness` (the previous script-based daemon) is kept in the repo as a fallback but is
 disabled.

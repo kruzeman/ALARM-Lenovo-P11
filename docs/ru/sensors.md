@@ -63,6 +63,8 @@ export XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-1 \
 `~/.config/kwinoutputconfig.json` (`autoBrightnessCurve`) и дальше интерполирует сам (измерено:
 108 люкс -> 80%, закрытый датчик 0.37 люкс -> 40%, с анимацией).
 
-`iio-sensor-proxy` должен оставаться выключенным: он захватывает SSC-датчик и ничего не отдаёт.
+`iio-sensor-proxy` должен быть **замаскирован** (`systemctl mask iio-sensor-proxy`): простого
+`disable` мало — KWin поднимает его по D-Bus-активации, он первым занимает
+`net.hadess.SensorProxy` и ничего не отдаёт.
 `j606f-als-brightness` (прежний скриптовый демон) оставлен в репозитории как запасной вариант,
 но выключен.
