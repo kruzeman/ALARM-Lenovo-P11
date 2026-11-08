@@ -71,6 +71,31 @@ static void sleep_ms(long ms)
 	sys2(SYS_nanosleep, ts, 0);
 }
 
+#define SYS_read 63
+#define O_RDONLY 0
+
+/* Скопировать файл из initramfs в целевой rootfs (для подмены модуля без загрузки системы). */
+static int copy_file(const char *src, const char *dst)
+{
+	long in, out;
+	char buf[4096];
+	long n;
+
+	in = sys6(SYS_openat, AT_FDCWD, (long)src, O_RDONLY, 0, 0, 0);
+	if (in < 0)
+		return -1;
+	out = sys4(SYS_openat, AT_FDCWD, dst, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (out < 0) {
+		sys1(SYS_close, in);
+		return -1;
+	}
+	while ((n = sys3(SYS_read, in, buf, sizeof(buf))) > 0)
+		sys3(SYS_write, out, buf, n);
+	sys1(SYS_close, in);
+	sys1(SYS_close, out);
+	return 0;
+}
+
 static const char *ROOT = "/newroot";
 static const char *HIMAX_DIR =
 	"/newroot/usr/lib/modules/7.2.3-sm61x5-hermes/kernel/drivers/input/touchscreen/himax_hx83102e";
@@ -145,6 +170,15 @@ void _start(void)
 	} else {
 		log_put("rescue-init: old himax module restored\n");
 	}
+
+	/* Подмена модуля кодека: в initramfs лежит рабочий snd-soc-es7210.ko.zst,
+	 * кладём его в rootfs, чтобы система загрузилась с проверенной версией.
+	 */
+	if (copy_file("/es7210.ko.zst",
+		      "/newroot/usr/lib/modules/7.2.3-sm61x5-hermes/kernel/sound/soc/codecs/snd-soc-es7210.ko.zst") == 0)
+		log_put("rescue-init: es7210 module replaced\n");
+	else
+		log_put("rescue-init: es7210 module copy FAILED\n");
 
 	/* страховка: убрать drop-in, который мог задержать/сломать upower */
 	sys4(SYS_renameat, AT_FDCWD,

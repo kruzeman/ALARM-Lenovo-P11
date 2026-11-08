@@ -1,0 +1,12 @@
+[Unit]
+Description=Re-probe ath10k_snoc (WCN3990) if wlan0 did not appear at boot
+After=multi-user.target rmtfs.service tqftpserv.service NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/j606f-wifi-reprobe.sh
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

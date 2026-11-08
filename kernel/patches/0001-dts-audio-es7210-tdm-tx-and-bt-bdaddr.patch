@@ -61,20 +61,3 @@ index be798d253..3bd84a3e4 100644
 +		status = "okay";
 +	};
 +};
-diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
-index de6ab73aa..b569e698a 100644
---- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
-+++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
-@@ -202,6 +202,12 @@ &uart3 {
- 
- 	bluetooth {
- 		compatible = "qcom,wcn3990-bt";
-+		/* The WCN3990 firmware carries no BD address, and the QCA driver
-+		 * marks it BDADDR_PROPERTY_BROKEN: the kernel byte-swaps this
-+		 * property, so these bytes read back as 02:00:00:00:60:6f
-+		 * (locally administered, stable across boots).
-+		 */
-+		local-bd-address = [6f 60 00 00 00 02];
- 		/* stock bt_wcn3990: io = L9, core = L17, pa = L23, xtal = L16 */
- 		vddio-supply = <&pm6125_l9>;
- 		vddxo-supply = <&pm6125_l16>;

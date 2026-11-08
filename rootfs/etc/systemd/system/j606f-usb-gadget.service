@@ -1,0 +1,15 @@
+[Unit]
+Description=LENOVO TB-J606F USB-NCM fallback access (172.16.42.1)
+After=network.target network-manager.service
+Wants=network-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/j606f-usb-gadget.sh
+# Гаджет пересоздаётся после каждой загрузки: configfs не переживает перезагрузку,
+# а канал нужен именно тогда, когда сеть не поднялась.
+ExecStop=/bin/sh -c 'echo "" > /sys/kernel/config/usb_gadget/j606f/UDC 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

@@ -83,3 +83,27 @@ arecord -D hw:0,1 -f S16_LE -c 2 -r 48000 -d 3 /tmp/mic.wav
 ```
 
 If `dmesg` shows `AFE enable for port 0x9001 failed -22`, the port never started and no file is produced.
+
+### Current state of the built-in microphones (ES7210 on PRIMARY_TDM_TX_0)
+
+Capture now **opens** — the DSP accepts the port. Two things were needed:
+
+1. **Two-channel TDM frame.** `snd_soc_dai_set_tdm_slot(cpu, GENMASK(1,0), 0, 4, 32)` — a
+   four-channel mask (`GENMASK(3,0)`) makes the ADSP answer `ADSP_EBADPARAM` (error 2) on
+   `AFE_PORT_CMD_SETUP`, and the port never starts.
+2. **Codec ratio must match the frame, not the sample width.** The TDM frame is
+   `slots × slot_width` = 4 × 32 = 128 bits, so the ES7210 needs `REG02 = 0xC1` (128 × fs).
+   `0x41` (64 × fs) is right only for a 2 × 32 I2S frame. `es7210.c` now takes `set_tdm_slot`
+   from the machine driver and derives the ratio from it.
+
+What is still open: the capture produces a valid file (144000 frames, stereo, 3 s) but the
+samples are **all zero** — the port runs, the codec does not deliver data. Reading the ES7210
+registers from userspace is blocked (the driver owns address 0x40), so the next steps are:
+`i2c-dev` access through the driver or a debugfs hook, verifying the codec really got the TDM
+init (`0x11/0x12`, `0x02`), the MCLK/SCLK the chip sees, and on which of the two LPASS TDM data
+lines (`gpio8`/`gpio9`) the ADC drives its `SDOUT`.
+
+Warning from the same session: the stock `adspr/adsps/adspua.jsn` protection-domain maps must
+**not** be copied into `/lib/firmware/qcom/sm6115/LENOVO/J606F/` — with them the ADSP enters a
+`qcom_q6v5_pas ... Handover signaled` crash loop and Wi-Fi (whose firmware is loaded through the
+ADSP) disappears. `pd-mapper` is not needed for audio on this device.

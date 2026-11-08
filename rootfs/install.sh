@@ -35,8 +35,15 @@ install -Dm755 "$HERE/usr/lib/systemd/system-sleep/50-j606f-resume" \
 install -Dm644 "$HERE/etc/systemd/system/upower.service.d/10-j606f-timeout.conf" \
 	/etc/systemd/system/upower.service.d/10-j606f-timeout.conf
 
+# Резервный доступ по USB (172.16.42.1) и повторный подъём Wi-Fi, если адаптер
+# не появился на загрузке: оба случая реально приводили к потере связи с планшетом.
+install -m755 "$HERE/usr/local/bin/j606f-usb-gadget.sh" /usr/local/bin/
+install -m755 "$HERE/usr/local/bin/j606f-wifi-reprobe.sh" /usr/local/bin/
+install -Dm644 "$HERE/etc/systemd/system/j606f-usb-gadget.service" /etc/systemd/system/j606f-usb-gadget.service
+install -Dm644 "$HERE/etc/systemd/system/j606f-wifi-reprobe.service" /etc/systemd/system/j606f-wifi-reprobe.service
+
 systemctl daemon-reload
-systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm
+systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe upower bluetooth sddm
 systemctl set-default graphical.target
 
 echo "готово; перезагрузись и проверь systemctl --failed"
