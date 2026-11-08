@@ -214,3 +214,24 @@ The microphones are `amic2`/`amic3`: the **WCD9370** ADC, which reaches the AP o
 2. Only then change the DAPM route to match the stock mux choice: `TX SMIC MUX0 = SWR_MIC4`
    means the codec output must feed `TX SWR_INPUT4`, not `TX SWR_INPUT1`.
 3. Then point the capture link at the right CDC DMA TX port and verify with `arecord`.
+
+
+### State at the end of 8 November (microphones)
+
+The top edge has two openings — at least two microphones, so the capture target is two
+channels (codec DEC0 and DEC1, inputs SWR_MIC0 and SWR_MIC4).
+
+Done and verified:
+* The SoundWire TX bus now has a working configuration: `qcom,tx-port-mapping = <1 2 3 4>`
+  (ADC1..4 to ports 1..4), the vendor `qcom,tx-channel-mapping` values,
+  `qcom,din-ports = <4>`, and routes ADC1..3 to `TX SWR_INPUT0/1/2/4/5`.
+* Root cause of `Bus clash detected` and the permanent `Alert` found: the driver enabled
+  **nine** channels over four ports (every codec channel is on by default). Turning off the
+  unused switches (`ADC1/3`, `DMIC0..5`, `MBHC Switch`) reduces the stream to a single port
+  with `ch_mask = 0x1`, and the clash disappears.
+* The capture link now uses `TX_CODEC_DMA_TX_4`, matching `amic2` in the stock configuration.
+
+Remaining: capture still ends with `EIO` on the first read — the DSP never hands over
+buffers. `hw_params`, prepare and port start complete without errors, and the kernel log stays
+empty even with dyndbg on `soundwire`, `wcd937x` and `q6asm`. Next step is the ASM session to
+AFE port relationship on the ADSP side, not the bus configuration.
