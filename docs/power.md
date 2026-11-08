@@ -97,6 +97,20 @@ Brightness itself is restored by `systemd-backlight@backlight:5e94000.dsi.0` fro
 panel comes up almost black — write a sane value once (`echo 1400 > /sys/class/backlight/*/brightness`)
 and it is what gets saved.
 
+### The real culprit: stale touch input devices
+
+`upowerd` dies with a kernel fault in `input_dev_uevent → vsnprintf → string`, and
+`plasmashell`/`powerdevil` fall with it. The cause is the vendor touch driver: its remove path
+called `input_free_device()` on **already registered** devices, so every
+`modprobe -r himax_hx83102e` (which `j606f-touch.service` does on each boot) left a freed
+input device in `/sys/class/input` with its name pointing at freed memory. Reading that
+device's `uevent` — exactly what udev and upower do — dereferences the dangling pointer.
+
+`kernel/patches/himax-input-unregister.patch` tracks registration and calls
+`input_unregister_device()` for registered devices (and `input_free_device()` only for
+unregistered ones). After it, one boot has a single `himax-touchscreen`/`himax-pen` pair and
+upower, battery and the brightness slider come up normally.
+
 ## Memory (zram)
 
 4 GB is tight for KDE, so zram with zstd is enabled:

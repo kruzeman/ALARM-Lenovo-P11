@@ -98,6 +98,21 @@ upower -i /org/freedesktop/UPower/devices/battery_mm8013 | grep -E "percentage|c
 стартует почти чёрной — достаточно один раз записать нормальное
 (`echo 1400 > /sys/class/backlight/*/brightness`), и сохранится уже оно.
 
+### Настоящая причина: висячие input-устройства тачскрина
+
+`upowerd` падает с фолтом в `input_dev_uevent → vsnprintf → string`, а вместе с ним ложатся
+`plasmashell` и `powerdevil`. Виноват вендорный драйвер тачскрина: в пути выгрузки он вызывал
+`input_free_device()` на **уже зарегистрированных** устройствах, поэтому каждый
+`modprobe -r himax_hx83102e` (а `j606f-touch.service` делает это при каждой загрузке)
+оставлял в `/sys/class/input` освобождённое устройство, имя которого указывало на
+освобождённую память. Чтение `uevent` такого устройства — ровно то, что делают udev и
+upower — разыменовывает битый указатель.
+
+`kernel/patches/himax-input-unregister.patch` запоминает факт регистрации и вызывает
+`input_unregister_device()` для зарегистрированных устройств (`input_free_device()` — только
+для незарегистрированных). После него в загрузке ровно одна пара
+`himax-touchscreen`/`himax-pen`, а upower, батарея и ползунок яркости поднимаются штатно.
+
 ## Память (zram)
 
 4 ГБ ОЗУ мало для KDE, поэтому включён zram с zstd:
