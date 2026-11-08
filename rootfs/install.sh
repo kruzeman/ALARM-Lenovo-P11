@@ -5,6 +5,7 @@ set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 install -m644 "$HERE"/etc/systemd/system/j606f-*.service /etc/systemd/system/
+install -Dm644 "$HERE"/etc/plasmalogin.conf.d/10-autologin.conf /etc/plasmalogin.conf.d/10-autologin.conf
 install -m755 "$HERE"/usr/local/bin/j606f-* /usr/local/bin/
 install -m755 "$HERE"/usr/local/bin/mic-test.sh /usr/local/bin/ 2>/dev/null || true
 install -m755 "$HERE"/usr/local/bin/sddm-x11-rotate.sh /usr/local/bin/
@@ -43,7 +44,8 @@ install -Dm644 "$HERE/etc/systemd/system/j606f-usb-gadget.service" /etc/systemd/
 install -Dm644 "$HERE/etc/systemd/system/j606f-wifi-reprobe.service" /etc/systemd/system/j606f-wifi-reprobe.service
 
 systemctl daemon-reload
-systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe j606f-sensor-proxy upower bluetooth sddm
+systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe j606f-sensor-proxy upower bluetooth plasmalogin
+systemctl disable sddm 2>/dev/null || true
 # iio-sensor-proxy на этом планшете не получает сэмплов от libssc 0.4.x, но
 # захватывает датчик; данные в net.hadess.SensorProxy отдаёт j606f-sensor-proxy.
 # disable не помогает: iio-sensor-proxy поднимается по D-Bus-активации и первым

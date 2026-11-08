@@ -29,7 +29,7 @@ hardware needs:
 
 ```bash
 pacman -S --needed base-devel openssh networkmanager sudo nano vim htop \
-  mesa plasma-meta sddm bluez bluez-utils upower zram-generator \
+  mesa plasma-meta plasma-login-manager bluez bluez-utils upower zram-generator \
   libcamera libcamera-tools plasma-camera epiphany \
   gst-plugins-base gst-plugins-good gst-plugins-bad gst-libav
 # AUR: qrtr rmtfs tqftpserv pd-mapper hexagonrpcd
@@ -86,7 +86,7 @@ cd /path/to/repo && ./rootfs/install.sh
 ```
 
 That installs the services and configuration files and enables `j606f-touch`, `j606f-lid`,
-`j606f-hid-resume`, `upower`, `bluetooth` and `sddm`.
+`j606f-hid-resume`, `j606f-sensor-proxy`, `upower`, `bluetooth` and `plasmalogin`.
 
 ## Optional: desktop tuning
 
@@ -104,23 +104,33 @@ Symptoms: black screen, garbled text, reboot loop. What to do:
 A proven debugging order: boot with a working DT first, then change one node at a time and compare
 `dtc -I dtb -O dts` output of the old and new tree (see `tools/patch_dts.py`).
 
-## Login screen (SDDM on X11, desktop on Wayland)
+## Login screen (Plasma Login Manager, autologin)
 
-The greeter runs on Xorg with `xrandr` rotation; the Plasma **session** runs on Wayland (`plasma.desktop`
-in `/usr/share/wayland-sessions`). `rootfs/etc/sddm.conf.d/20-x11.conf`:
+`plasma-login-manager` (service `plasmalogin`) replaces SDDM. SDDM is gone because its Wayland greeter was
+unstable here: `kwin_wayland` started as the `sddm` user logged
+`kwin_core: Failed to take control of ... session. Maybe another compositor is running?`, crashed with `SEGV`,
+and left stale sessions holding the DRM master, so the next login hung after the password
+(`startplasma-wayland` started, `plasmashell` never appeared). The workaround was an Xorg greeter with
+`xrandr` rotation; with plasmalogin there is no greeter to fight — the device autologins straight into the
+Wayland session and the rotation comes from the saved output configuration.
+
+`rootfs/etc/plasmalogin.conf.d/10-autologin.conf`:
 
 ```ini
-[X11]
-DisplayCommand=/usr/local/bin/sddm-x11-rotate.sh
+[Autologin]
+User=user
+Session=plasma.desktop
+Relogin=false
 ```
 
-`rootfs/usr/local/bin/sddm-x11-rotate.sh` waits for the X server and runs
-`xrandr --output DSI-1 --rotate left`, because the panel is portrait (1200×2000) while the tablet is used
-in a landscape dock. Package needed: `xorg-xrandr`.
+Then:
 
-Why not the Wayland greeter: `kwin_wayland` started by SDDM as the `sddm` user is unstable here — it logs
-`kwin_core: Failed to take control of ... session. Maybe another compositor is running?`, crashes with
-`SEGV`, and after a few SDDM restarts leaves stale user sessions that still hold the DRM master, so the
-next login hangs after the password (`startplasma-wayland` starts, `plasmashell` never appears). Terminating
-the stale sessions (`loginctl terminate-session`) helps once, but the greeter keeps crashing. Xorg for the
-greeter plus Wayland for the session is what proved stable.
+```bash
+systemctl disable sddm
+systemctl enable plasmalogin      # moves the display-manager.service symlink
+```
+
+Verified after a reboot: `plasmalogin` active, `sddm` inactive, the user session on tty1, `kwin_wayland`
+running with rotation and auto-brightness intact, Wi-Fi associated. The old SDDM pieces
+(`rootfs/etc/sddm.conf.d/20-x11.conf` and `rootfs/usr/local/bin/sddm-x11-rotate.sh`) are kept only as the way
+back: `xorg-xrandr` is the package they need.

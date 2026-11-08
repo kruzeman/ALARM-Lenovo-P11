@@ -68,3 +68,12 @@ enough, because KWin activates it over D-Bus, it grabs `net.hadess.SensorProxy` 
 delivers nothing.
 `j606f-als-brightness` (the previous script-based daemon) is kept in the repo as a fallback but is
 disabled.
+
+### Only the sensor PD map is needed, and `pd-mapper` must stay off
+
+The light sensor needs exactly one map file — `adsps.jsn` (`sensor_pd`) — in
+`/lib/firmware/qcom/sm6115/LENOVO/J606F/`; `pd-mapper` itself stays disabled. Without that file `ssccli --sensor
+light` fails and the bridge publishes 0 lux (auto-brightness dies silently); with the other three maps
+(`adspr`, `adspua`, `cdspr`) plus `pd-mapper` running, the ADSP drops into `Handover signaled, but it already
+happened` and takes Wi-Fi with it. Getting the file: `mount /dev/disk/by-partlabel/modem_a /mnt/fw`, copy
+`/mnt/fw/image/adsps.jsn`, `umount`, then `systemctl restart hexagonrpcd-adsp-sensorspd j606f-sensor-proxy`.

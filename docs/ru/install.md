@@ -29,7 +29,7 @@ tar -xpf ArchLinuxARM-aarch64-latest.tar.gz -C /mnt
 
 ```bash
 pacman -S --needed base-devel openssh networkmanager sudo nano vim htop \
-  mesa plasma-meta sddm bluez bluez-utils upower zram-generator \
+  mesa plasma-meta plasma-login-manager bluez bluez-utils upower zram-generator \
   libcamera libcamera-tools plasma-camera epiphany \
   gst-plugins-base gst-plugins-good gst-plugins-bad gst-libav
 # AUR: qrtr rmtfs tqftpserv pd-mapper hexagonrpcd
@@ -119,23 +119,33 @@ KWin и индексатор Baloo; замеры — в `docs/performance.md`, `
 Проверенный порядок отладки: сначала загрузиться с рабочим DTB, потом менять один узел за раз и
 сравнивать `dtc -I dtb -O dts` старого и нового дерева (см. `tools/patch_dts.py`).
 
-## Экран входа (SDDM на X11, рабочий стол на Wayland)
+## Экран входа (Plasma Login Manager, автологин)
 
-Greeter работает на Xorg с поворотом через `xrandr`; сессия Plasma — на Wayland (`plasma.desktop` в
-`/usr/share/wayland-sessions`). `rootfs/etc/sddm.conf.d/20-x11.conf`:
+`plasma-login-manager` (служба `plasmalogin`) заменил SDDM. От SDDM пришлось уйти из-за нестабильного
+Wayland-греeter'а: `kwin_wayland`, запущенный под пользователем `sddm`, писал
+`kwin_core: Failed to take control of ... session. Maybe another compositor is running?`, падал с `SEGV`, а
+после перезапусков оставались висеть сессии, держащие DRM-мастер, и следующий вход зависал после пароля
+(`startplasma-wayland` стартовал, `plasmashell` не появлялся). Обходным путём был Xorg-греeter с `xrandr`;
+с plasmalogin воевать не с кем — устройство сразу автологинится в Wayland-сессию, а поворот берётся из
+сохранённой конфигурации выхода.
+
+`rootfs/etc/plasmalogin.conf.d/10-autologin.conf`:
 
 ```ini
-[X11]
-DisplayCommand=/usr/local/bin/sddm-x11-rotate.sh
+[Autologin]
+User=user
+Session=plasma.desktop
+Relogin=false
 ```
 
-`rootfs/usr/local/bin/sddm-x11-rotate.sh` ждёт готовности X и выполняет
-`xrandr --output DSI-1 --rotate left`: панель портретная (1200×2000), а планшет используется в альбомном
-доке. Нужен пакет `xorg-xrandr`.
+Дальше:
 
-Почему не Wayland-греeter: `kwin_wayland`, запущенный SDDM под пользователем `sddm`, здесь нестабилен —
-в логе `kwin_core: Failed to take control of ... session. Maybe another compositor is running?`, падение с
-`SEGV`, а после нескольких перезапусков SDDM остаются висеть старые сессии пользователя, которые держат
-DRM-мастер, и следующий вход зависает после пароля (`startplasma-wayland` стартует, `plasmashell` не
-появляется). Разовая чистка (`loginctl terminate-session`) помогает, но греeter продолжает падать.
-Стабильной оказалась схема Xorg для экрана входа + Wayland для сессии.
+```bash
+systemctl disable sddm
+systemctl enable plasmalogin      # перевесит симлинк display-manager.service
+```
+
+Проверено после перезагрузки: `plasmalogin` активен, `sddm` выключен, сессия пользователя на tty1,
+`kwin_wayland` работает, поворот и автояркость на месте, Wi-Fi ассоциировался. Старые файлы SDDM
+(`rootfs/etc/sddm.conf.d/20-x11.conf` и `rootfs/usr/local/bin/sddm-x11-rotate.sh`) оставлены только как путь
+назад; им нужен пакет `xorg-xrandr`.

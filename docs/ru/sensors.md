@@ -68,3 +68,12 @@ export XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-1 \
 `net.hadess.SensorProxy` и ничего не отдаёт.
 `j606f-als-brightness` (прежний скриптовый демон) оставлен в репозитории как запасной вариант,
 но выключен.
+
+### Нужна только карта сенсорного PD, а `pd-mapper` должен оставаться выключенным
+
+Датчику света нужен ровно один файл — `adsps.jsn` (`sensor_pd`) в
+`/lib/firmware/qcom/sm6115/LENOVO/J606F/`; сам `pd-mapper` при этом выключен. Без этого файла `ssccli --sensor
+light` не работает, и мост отдаёт 0 люкс (автояркость молча перестаёт работать); с остальными тремя картами
+(`adspr`, `adspua`, `cdspr`) и запущенным `pd-mapper` ADSP уходит в `Handover signaled, but it already
+happened` и утягивает за собой Wi-Fi. Достать файл: `mount /dev/disk/by-partlabel/modem_a /mnt/fw`, скопировать
+`/mnt/fw/image/adsps.jsn`, `umount`, затем `systemctl restart hexagonrpcd-adsp-sensorspd j606f-sensor-proxy`.
