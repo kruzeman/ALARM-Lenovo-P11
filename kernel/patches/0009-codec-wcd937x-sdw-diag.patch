@@ -1,0 +1,19 @@
+diff --git a/sound/soc/codecs/wcd937x-sdw.c b/sound/soc/codecs/wcd937x-sdw.c
+index 7a18bed7f..1d521f27a 100644
+--- a/sound/soc/codecs/wcd937x-sdw.c
++++ b/sound/soc/codecs/wcd937x-sdw.c
+@@ -101,6 +101,14 @@ int wcd937x_sdw_hw_params(struct wcd937x_sdw_priv *wcd,
+ 		wcd->active_ports++;
+ 	}
+ 
++	/* Диагностика: что реально уходит на шину при старте потока. */
++	dev_info(&wcd->sdev->dev, "hw_params: dir=%s ch_count=%d active_ports=%d rate=%u\n",
++		 wcd->is_tx ? "tx" : "rx", wcd->sconfig.ch_count, wcd->active_ports,
++		 params_rate(params));
++	for (i = 0; i < wcd->active_ports; i++)
++		dev_info(&wcd->sdev->dev, "  port[%d]: num=%d ch_mask=0x%x\n", i,
++			 port_config[i].num, port_config[i].ch_mask);
++
+ 	wcd->sconfig.bps = 1;
+ 	wcd->sconfig.frame_rate = params_rate(params);
+ 	wcd->sconfig.direction = wcd->is_tx ? SDW_DATA_DIR_TX : SDW_DATA_DIR_RX;

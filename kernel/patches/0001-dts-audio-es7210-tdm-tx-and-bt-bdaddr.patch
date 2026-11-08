@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
-index be798d253..bfb326c4a 100644
+index be798d253..b4fe100eb 100644
 --- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
 +++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
 @@ -55,10 +55,25 @@ sound {
@@ -29,7 +29,7 @@ index be798d253..bfb326c4a 100644
  
  		mm1-dai-link {
  			link-name = "MultiMedia1";
-@@ -125,13 +140,36 @@ codec {
+@@ -125,13 +140,40 @@ codec {
  			};
  
  			cpu {
@@ -44,12 +44,16 @@ index be798d253..bfb326c4a 100644
 +		builtin-mic-dai-link {
 +			link-name = "Built-in Mic Capture";
 +
++			/* Встроенные микрофоны: АЦП WCD9370 -> SoundWire (va_swr_master) ->
++			 * VA-макро -> CDC DMA TX. Пробуем именно этот тракт: шина уже
++			 * приведена в рабочее состояние (один порт, один канал).
++			 */
 +			codec {
-+				sound-dai = <&es7210>;
++				sound-dai = <&wcd937x 1>, <&swr0 0>, <&vamacro 0>;
 +			};
 +
 +			cpu {
-+				sound-dai = <&q6afedai PRIMARY_TDM_TX_0>;
++				sound-dai = <&q6afedai VA_CODEC_DMA_TX_0>;
 +			};
 +
 +			platform {
@@ -67,7 +71,7 @@ index be798d253..bfb326c4a 100644
  	};
  };
  
-@@ -248,6 +286,20 @@ dai@18 {
+@@ -248,6 +290,20 @@ dai@18 {
  		qcom,tdm-data-delay = <0>;
  		qcom,tdm-data-align = <0>;
  	};
@@ -88,7 +92,7 @@ index be798d253..bfb326c4a 100644
  };
  
  &swr0 {
-@@ -258,7 +310,13 @@ &swr0 {
+@@ -258,7 +314,13 @@ &swr0 {
  	wcd937x_tx: codec@0,3 {
  		compatible = "sdw20217010a00";
  		reg = <0 3>;
@@ -103,7 +107,7 @@ index be798d253..bfb326c4a 100644
  	};
  };
  
-@@ -271,6 +329,8 @@ wcd937x_rx: codec@0,4 {
+@@ -271,6 +333,8 @@ wcd937x_rx: codec@0,4 {
  		compatible = "sdw20217010a00";
  		reg = <0 4>;
  		qcom,rx-port-mapping = <1 2 3 4 5>;
@@ -112,7 +116,7 @@ index be798d253..bfb326c4a 100644
  	};
  };
  
-@@ -282,3 +342,14 @@ wcd_reset_n: wcd-reset-n-state {
+@@ -282,3 +346,14 @@ wcd_reset_n: wcd-reset-n-state {
  		output-high;
  	};
  };
