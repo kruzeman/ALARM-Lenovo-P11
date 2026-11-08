@@ -107,3 +107,32 @@ Warning from the same session: the stock `adspr/adsps/adspua.jsn` protection-dom
 **not** be copied into `/lib/firmware/qcom/sm6115/LENOVO/J606F/` — with them the ADSP enters a
 `qcom_q6v5_pas ... Handover signaled` crash loop and Wi-Fi (whose firmware is loaded through the
 ADSP) disappears. `pd-mapper` is not needed for audio on this device.
+
+### The card that only appeared on some boots (PDR race) — fixed
+
+`q6core`/`q6afe`/`q6asm`/`q6adm` in `sm6115.dtsi` carried
+`qcom,protection-domain = "avs/audio", "msm/adsp/audio_pd"`. `apr_probe()` only registers
+PD-dependent services when PDR reports that domain **UP**, and that report arrives over QRTR
+from the ADSP — whose `IPCRTR` channel is not announced on every boot (it is present for the
+CDSP, not reliably for the ADSP). Whenever it was missing, nothing created `service@4`, so no
+`q6afecc` clock, so the LPASS pinctrl stayed in `devices_deferred` and the sound card never
+instantiated: `--- no soundcards ---`, no ASoC error in the log.
+
+`kernel/patches/0006-dts-audio-apr-no-protection-domain.patch` drops that property for the
+four audio services, so they are registered unconditionally in `apr_probe()`. After it a boot
+shows `service@` × 4, `devices_deferred` empty and the card present — every time.
+
+### TDM TX: the parameters mainline never sent
+
+`q6afe_tdm_port_prepare()` did not copy `ctrl_data_out_enable`, `ctrl_invert_sync_pulse` or
+`ctrl_sync_data_delay` into the AFE port config, although the DT parser already read
+`qcom,tdm-data-out`, `qcom,tdm-invert-sync` and `qcom,tdm-data-delay`.
+`kernel/patches/0005-q6afe-tdm-tx-data-out.patch` passes them through, and the TX dai node sets
+`qcom,tdm-data-out = <1>`.
+
+State after all of the above: the ES7210 is configured over I²C as 16-bit TDM I2S
+(`0x11 = 0x60`, `0x12 = 0x02`, `0x08 = 0x14`), the chip reports `CSM_STATE = normal`, analog
+path on, mics selected (`0x43` bit 4), the AFE port starts and `arecord` writes a full-size
+file — but every sample is still zero. Next candidates, in order: `qcom,tdm-invert-sync`
+polarity on the TX node, and whether the ADC drives LPASS `gpio8` or `gpio9`
+(`SOUT1`/`SOUT2`), i.e. whether the port should be `PRIMARY_TDM_TX_1`.

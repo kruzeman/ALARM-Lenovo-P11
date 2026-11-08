@@ -1,0 +1,46 @@
+diff --git a/sound/soc/qcom/qdsp6/q6afe-dai.c b/sound/soc/qcom/qdsp6/q6afe-dai.c
+index a0d21034a..6d3a790df 100644
+--- a/sound/soc/qcom/qdsp6/q6afe-dai.c
++++ b/sound/soc/qcom/qdsp6/q6afe-dai.c
+@@ -278,6 +278,9 @@ static int q6tdm_hw_params(struct snd_pcm_substream *substream,
+ 	tdm->data_align_type = dai_data->priv[dai->id].data_align;
+ 	tdm->sync_src = dai_data->priv[dai->id].sync_src;
+ 	tdm->sync_mode = dai_data->priv[dai->id].sync_mode;
++	tdm->data_out_enable = dai_data->priv[dai->id].data_out_enable;
++	tdm->invert_sync = dai_data->priv[dai->id].invert_sync;
++	tdm->data_delay = dai_data->priv[dai->id].data_delay;
+ 
+ 	return 0;
+ }
+diff --git a/sound/soc/qcom/qdsp6/q6afe.c b/sound/soc/qcom/qdsp6/q6afe.c
+index 40237267f..0131fc8e6 100644
+--- a/sound/soc/qcom/qdsp6/q6afe.c
++++ b/sound/soc/qcom/qdsp6/q6afe.c
+@@ -1362,6 +1362,9 @@ void q6afe_tdm_port_prepare(struct q6afe_port *port,
+ 	pcfg->tdm_cfg.sync_mode = cfg->sync_mode;
+ 	pcfg->tdm_cfg.sync_src = cfg->sync_src;
+ 	pcfg->tdm_cfg.nslots_per_frame = cfg->nslots_per_frame;
++	pcfg->tdm_cfg.ctrl_data_out_enable = cfg->data_out_enable;
++	pcfg->tdm_cfg.ctrl_invert_sync_pulse = cfg->invert_sync;
++	pcfg->tdm_cfg.ctrl_sync_data_delay = cfg->data_delay;
+ 
+ 	pcfg->tdm_cfg.slot_width = cfg->slot_width;
+ 	pcfg->tdm_cfg.slot_mask = cfg->slot_mask;
+diff --git a/sound/soc/qcom/qdsp6/q6afe.h b/sound/soc/qcom/qdsp6/q6afe.h
+index 0b8c3ec13..67e8881c5 100644
+--- a/sound/soc/qcom/qdsp6/q6afe.h
++++ b/sound/soc/qcom/qdsp6/q6afe.h
+@@ -184,6 +184,13 @@ struct q6afe_i2s_cfg {
+ 
+ struct q6afe_tdm_cfg {
+ 	u16	num_channels;
++	/* Эти три поля mainline парсил из DT, но в DSP не передавал:
++	 * для TDM-TX без ctrl_data_out_enable интерфейс не читает линию данных,
++	 * и захват приходит нулями.
++	 */
++	u16	data_out_enable;
++	u16	invert_sync;
++	u16	data_delay;
+ 	u32	sample_rate;
+ 	u16	bit_width;
+ 	u16	data_format;

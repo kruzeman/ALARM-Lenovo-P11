@@ -109,3 +109,33 @@ arecord -D hw:0,1 -f S16_LE -c 2 -r 48000 -d 3 /tmp/mic.wav
 **нельзя** копировать в `/lib/firmware/qcom/sm6115/LENOVO/J606F/` — с ними ADSP уходит в цикл
 `qcom_q6v5_pas ... Handover signaled`, и пропадает Wi-Fi (его прошивка грузится через ADSP).
 Для звука `pd-mapper` на этом устройстве не нужен.
+
+
+### Карта, которая появлялась не в каждую загрузку (гонка PDR) — исправлено
+
+У `q6core`/`q6afe`/`q6asm`/`q6adm` в `sm6115.dtsi` стояло
+`qcom,protection-domain = "avs/audio", "msm/adsp/audio_pd"`. `apr_probe()` регистрирует такие
+сервисы только после того, как PDR сообщит о подъёме домена, а сообщение приходит по QRTR от
+ADSP — канал `IPCRTR` объявляется не в каждой загрузке (у CDSP он есть, у ADSP — не всегда).
+Когда его не было, не создавался `service@4`, не регистрировался `q6afecc`, LPASS-пинконтроллер
+оставался в `devices_deferred`, и карта не появлялась: `--- no soundcards ---` и ни одной
+ошибки ASoC в журнале.
+
+`kernel/patches/0006-dts-audio-apr-no-protection-domain.patch` убирает это свойство у четырёх
+аудио-сервисов — они регистрируются безусловно в `apr_probe()`. После патча в каждой загрузке
+`service@` × 4, `devices_deferred` пуст, карта на месте.
+
+### TDM TX: параметры, которые mainline не передавал
+
+`q6afe_tdm_port_prepare()` не копировал `ctrl_data_out_enable`, `ctrl_invert_sync_pulse` и
+`ctrl_sync_data_delay` в конфиг AFE-порта, хотя парсер DT уже читал `qcom,tdm-data-out`,
+`qcom,tdm-invert-sync` и `qcom,tdm-data-delay`.
+`kernel/patches/0005-q6afe-tdm-tx-data-out.patch` передаёт их, а TX-dai выставляет
+`qcom,tdm-data-out = <1>`.
+
+Состояние после всего этого: ES7210 по I²C настроен как 16-бит TDM I2S
+(`0x11 = 0x60`, `0x12 = 0x02`, `0x08 = 0x14`), чип рапортует `CSM_STATE = normal`, аналог включён,
+микрофоны выбраны (`0x43` бит 4), AFE-порт стартует, `arecord` пишет файл полного размера — но
+все сэмплы по-прежнему нулевые. Дальше по порядку: полярность `qcom,tdm-invert-sync` на TX-узле
+и на какой линии LPASS сидит выход АЦП (`gpio8` или `gpio9`), то есть не нужен ли порт
+`PRIMARY_TDM_TX_1`.
