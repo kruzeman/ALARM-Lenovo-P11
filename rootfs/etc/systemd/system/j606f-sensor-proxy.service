@@ -1,0 +1,12 @@
+[Unit]
+Description=Bridge: SSC light sensor -> net.hadess.SensorProxy (Lenovo TB-J606F)
+After=hexagonrpcd-adsp-sensorspd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/j606f-sensor-proxy
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

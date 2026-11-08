@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""j606f-sensor-proxy — мост между SSC-датчиком освещённости и KDE.
+
+Зачем: iio-sensor-proxy 3.9 с libssc 0.4.x на этом планшете находит датчик
+LTR578, но не получает от него ни одного сэмпла (та же беда с акселерометром).
+Поэтому мы сами занимаем шинное имя net.hadess.SensorProxy и отдаём KWin
+значения освещённости, прочитанные через ssccli (он с этим датчиком работает).
+
+Для KDE это неотличимо от штатного прокси: галочка «автоматически подстраивать
+яркость» в настройках экрана работает, кривую и гистерезис считает сам KWin.
+"""
+
+import os
+import re
+import subprocess
+import threading
+import time
+
+from gi.repository import Gio, GLib
+
+BUS_NAME = "net.hadess.SensorProxy"
+OBJECT_PATH = "/net/hadess/SensorProxy"
+IFACE = "net.hadess.SensorProxy"
+POLL_SECONDS = 8
+
+INTROSPECTION = """
+<node>
+  <interface name="net.hadess.SensorProxy">
+    <method name="ClaimAccelerometer"/>
+    <method name="ClaimLight"/>
+    <method name="ClaimProximity"/>
+    <method name="ReleaseAccelerometer"/>
+    <method name="ReleaseLight"/>
+    <method name="ReleaseProximity"/>
+    <property name="AccelerometerOrientation" type="s" access="read"/>
+    <property name="HasAccelerometer" type="b" access="read"/>
+    <property name="HasAmbientLight" type="b" access="read"/>
+    <property name="HasProximity" type="b" access="read"/>
+    <property name="LightLevel" type="d" access="read"/>
+    <property name="LightLevelUnit" type="s" access="read"/>
+    <property name="ProximityNear" type="b" access="read"/>
+  </interface>
+</node>
+"""
+
+state = {
+    "light": 0.0,
+    "claimed": False,
+}
+
+
+def log(msg):
+    print(f"j606f-sensor-proxy: {msg}", flush=True)
+
+
+FAKE_LUX = os.environ.get("J606F_FAKE_LUX")
+
+
+def read_lux():
+    """Один замер через ssccli. Возвращает float или None."""
+    if FAKE_LUX is not None:          # отладочный режим проверки KWin
+        return float(FAKE_LUX)
+    try:
+        out = subprocess.run(
+            ["ssccli", "--sensor", "light", "--timeout", "4"],
+            capture_output=True, text=True, timeout=20,
+        ).stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        log(f"ssccli: {exc}")
+        return None
+
+    m = re.search(r"measurement:\s*([0-9.]+)\s*Lux", out)
+    if not m:
+        return None
+    return float(m.group(1))
+
+
+def poll_loop(connection):
+    while True:
+        lux = read_lux()
+        if lux is not None and (FAKE_LUX is not None or abs(lux - state["light"]) >= max(1.0, state["light"] * 0.1)):
+            state["light"] = lux
+            if state["claimed"]:
+                connection.emit_signal(
+                    None, OBJECT_PATH, "org.freedesktop.DBus.Properties",
+                    "PropertiesChanged",
+                    GLib.Variant("(sa{sv}as)", (
+                        IFACE,
+                        {"LightLevel": GLib.Variant("d", lux)},
+                        [],
+                    )),
+                )
+                log(f"lux={lux:.2f}")
+        time.sleep(POLL_SECONDS)
+
+
+def on_method(connection, sender, path, iface, method, params, invocation):
+    if method in ("ClaimLight", "ClaimAccelerometer", "ClaimProximity"):
+        state["claimed"] = True
+        log(f"{method}()")
+    elif method.startswith("Release"):
+        state["claimed"] = False
+        log(f"{method}()")
+    invocation.return_value(None)
+
+
+def on_get_property(connection, sender, path, iface, prop):
+    if prop == "LightLevel":
+        return GLib.Variant("d", state["light"])
+    if prop == "LightLevelUnit":
+        return GLib.Variant("s", "lux")
+    if prop == "HasAmbientLight":
+        return GLib.Variant("b", True)
+    if prop == "HasAccelerometer":
+        return GLib.Variant("b", False)
+    if prop == "HasProximity":
+        return GLib.Variant("b", False)
+    if prop == "ProximityNear":
+        return GLib.Variant("b", False)
+    if prop == "AccelerometerOrientation":
+        return GLib.Variant("s", "undefined")
+    return None
+
+
+def on_bus_acquired(connection, name):
+    info = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION)
+    connection.register_object(
+        OBJECT_PATH, info.interfaces[0], on_method, on_get_property, None,
+    )
+    log(f"имя {name} занято, опрос датчика каждые {POLL_SECONDS} с")
+    threading.Thread(target=poll_loop, args=(connection,), daemon=True).start()
+
+    # Первый замер сразу, чтобы KWin не видел 0 люкс на старте.
+    lux = read_lux()
+    if lux is not None:
+        state["light"] = lux
+        log(f"первый замер: {lux:.2f} lux")
+
+
+def main():
+    Gio.bus_own_name(
+        Gio.BusType.SYSTEM, BUS_NAME, Gio.BusNameOwnerFlags.NONE,
+        on_bus_acquired, None, None,
+    )
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

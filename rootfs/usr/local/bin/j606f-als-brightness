@@ -1,0 +1,64 @@
+#!/bin/bash
+# j606f-als-brightness — авто-яркость для Lenovo Tab P11 (TB-J606F).
+#
+# Почему не штатно: в Plasma 6.6+ автояркость есть, но iio-sensor-proxy получает
+# от libssc 0.4.x только «датчик найден» и ни одного сэмпла (то же самое у нас
+# с акселерометром). ssccli тот же датчик читает нормально, поэтому яркость
+# ставим по его показаниям через kscreen-doctor.
+#
+# Запускается как пользовательский systemd-юнит (нужна сессия KWin).
+
+set -u
+
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
+
+OUT=${J606F_OUTPUT:-DSI-1}
+INTERVAL=${J606F_ALS_INTERVAL:-8}
+
+log() { echo "j606f-als: $*"; }
+
+# lux -> процент яркости. Границы подобраны так, чтобы в тёмной комнате
+# (5-20 люкс) экран не слепил, а на улице выходил на максимум.
+percent_for() {
+    local lux=$1
+    if   [ "$lux" -lt 5 ];    then echo 25
+    elif [ "$lux" -lt 20 ];   then echo 33
+    elif [ "$lux" -lt 60 ];   then echo 45
+    elif [ "$lux" -lt 150 ];  then echo 58
+    elif [ "$lux" -lt 400 ];  then echo 72
+    elif [ "$lux" -lt 1000 ]; then echo 86
+    else                           echo 100
+    fi
+}
+
+last=""
+fail=0
+
+log "старт, выход $OUT, интервал ${INTERVAL}с"
+
+while true; do
+    lux=$(timeout 15 ssccli --sensor light --timeout 4 2>/dev/null \
+          | sed -n 's/.*measurement: \([0-9.]*\) Lux.*/\1/p' | tail -1)
+
+    if [ -z "$lux" ]; then
+        fail=$((fail + 1))
+        # датчик может быть занят прокси или ещё не готов — не спамим в лог
+        [ $((fail % 10)) -eq 1 ] && log "нет данных от датчика (попытка $fail)"
+        sleep "$INTERVAL"
+        continue
+    fi
+    fail=0
+
+    p=$(percent_for "${lux%.*}")
+    if [ "$p" != "$last" ]; then
+        if kscreen-doctor output.$OUT.brightness.$p >/dev/null 2>&1; then
+            log "lux=$lux -> ${p}%"
+            last=$p
+        else
+            log "не удалось выставить яркость ${p}%"
+        fi
+    fi
+
+    sleep "$INTERVAL"
+done

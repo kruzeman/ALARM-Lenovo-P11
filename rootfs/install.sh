@@ -43,7 +43,10 @@ install -Dm644 "$HERE/etc/systemd/system/j606f-usb-gadget.service" /etc/systemd/
 install -Dm644 "$HERE/etc/systemd/system/j606f-wifi-reprobe.service" /etc/systemd/system/j606f-wifi-reprobe.service
 
 systemctl daemon-reload
-systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe upower bluetooth sddm
+systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe j606f-sensor-proxy upower bluetooth sddm
+# iio-sensor-proxy на этом планшете не получает сэмплов от libssc 0.4.x, но
+# захватывает датчик; данные в net.hadess.SensorProxy отдаёт j606f-sensor-proxy.
+systemctl disable --now iio-sensor-proxy 2>/dev/null || true
 systemctl set-default graphical.target
 
 echo "готово; перезагрузись и проверь systemctl --failed"
