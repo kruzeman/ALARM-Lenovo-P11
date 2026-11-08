@@ -1,7 +1,36 @@
 diff --git a/arch/arm64/boot/dts/qcom/sm6115.dtsi b/arch/arm64/boot/dts/qcom/sm6115.dtsi
-index c58677a76..9e2b56fd0 100644
+index c58677a76..7d0d94610 100644
 --- a/arch/arm64/boot/dts/qcom/sm6115.dtsi
 +++ b/arch/arm64/boot/dts/qcom/sm6115.dtsi
+@@ -2991,18 +2991,18 @@ swr0: soundwire@a740000 {
+ 			reset-names = "swr_audio_cgcr";
+ 
+ 			label = "VA_TX";
+-			qcom,din-ports = <3>;
++			qcom,din-ports = <4>;
+ 			qcom,dout-ports = <0>;
+ 
+-			qcom,ports-sinterval-low =	/bits/ 8 <0x03 0x03 0x03>;
+-			qcom,ports-offset1 =		/bits/ 8 <0x01 0x02 0x01>;
+-			qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x00>;
+-			qcom,ports-hstart =		/bits/ 8 <0xff 0xff 0xff>;
+-			qcom,ports-hstop =		/bits/ 8 <0xff 0xff 0xff>;
+-			qcom,ports-word-length =	/bits/ 8 <0xff 0xff 0xff>;
+-			qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0xff 0xff>;
+-			qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff>;
+-			qcom,ports-lane-control =	/bits/ 8 <0x00 0x00 0x00>;
++			qcom,ports-sinterval-low =	/bits/ 8 <0x03 0x03 0x03 0x03>;
++			qcom,ports-offset1 =		/bits/ 8 <0x01 0x02 0x01 0x01>;
++			qcom,ports-offset2 =		/bits/ 8 <0x00 0x00 0x00 0x00>;
++			qcom,ports-hstart =		/bits/ 8 <0xff 0xff 0xff 0xff>;
++			qcom,ports-hstop =		/bits/ 8 <0xff 0xff 0xff 0xff>;
++			qcom,ports-word-length =	/bits/ 8 <0xff 0xff 0xff 0xff>;
++			qcom,ports-block-pack-mode =	/bits/ 8 <0xff 0xff 0xff 0xff>;
++			qcom,ports-block-group-count =	/bits/ 8 <0xff 0xff 0xff 0xff>;
++			qcom,ports-lane-control =	/bits/ 8 <0x00 0x00 0x00 0x00>;
+ 
+ 			#sound-dai-cells = <1>;
+ 			#address-cells = <2>;
 @@ -3048,6 +3048,11 @@ glink-edge {
  
  				apr {

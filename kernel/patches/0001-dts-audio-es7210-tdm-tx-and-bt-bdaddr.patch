@@ -1,8 +1,35 @@
 diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
-index be798d253..073537710 100644
+index be798d253..d553e87de 100644
 --- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
 +++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
-@@ -132,6 +132,22 @@ platform {
+@@ -55,10 +55,25 @@ sound {
+ 		model = "Lenovo-TB-J606F";
+ 		pinctrl-0 = <&lpass_tdm1_active>;
+ 		pinctrl-names = "default";
++		/* Пути со stock-роутинга (bolero/wcd937x, fragment@1 в dtbo):
++		 * TX SWR_MIC0 <- ADC1_OUTPUT, SWR_MIC4 <- ADC2_OUTPUT,
++		 * SWR_MIC5 <- ADC3_OUTPUT, SWR_MIC8/9 <- DMIC1/2_OUTPUT.
++		 * В mainline те же входы называются TX SWR_INPUTn, а перепутанный
++		 * в драйвере SWR_MIC10/11 — намеренно не трогаем. ADC2_OUTPUT висит
++		 * на двух входах сразу: по stock это SWR_MIC4, по старому референсу
++		 * (qcm6490-idp) — INPUT1 (мастер-порт 1, канал 2). Какой из них рабочий,
++		 * решает рантайм-свип TX SMIC MUX0, без перезагрузки.
++		 */
+ 		audio-routing = "IN1_HPHL", "HPHL_OUT",
+ 				"IN2_HPHR", "HPHR_OUT",
++				"AMIC1", "MIC BIAS1",
+ 				"AMIC2", "MIC BIAS2",
+-				"TX SWR_INPUT1", "ADC2_OUTPUT";
++				"AMIC3", "MIC BIAS3",
++				"TX SWR_INPUT0", "ADC1_OUTPUT",
++				"TX SWR_INPUT1", "ADC2_OUTPUT",
++				"TX SWR_INPUT2", "ADC3_OUTPUT",
++				"TX SWR_INPUT4", "ADC2_OUTPUT",
++				"TX SWR_INPUT5", "ADC3_OUTPUT";
+ 
+ 		mm1-dai-link {
+ 			link-name = "MultiMedia1";
+@@ -132,6 +147,29 @@ platform {
  				sound-dai = <&q6routing>;
  			};
  		};
@@ -22,10 +49,17 @@ index be798d253..073537710 100644
 +			};
 +		};
 +
++		/* Второй CDC-DMA порт для того же тракта: stock mixer_paths.xml
++		 * снимает микрофоны с TX_CDC_DMA_TX_4, референс qcm6490-idp — с TX_3.
++		 * Держать оба нельзя: codec DAI у них общий, ASoC отвечает
++		 * "too many users Capture at open" и заваливает журнал. Поэтому порт
++		 * переключается правкой cpu.sound-dai ниже, между загрузками.
++		 */
++
  	};
  };
  
-@@ -248,6 +264,20 @@ dai@18 {
+@@ -248,6 +286,20 @@ dai@18 {
  		qcom,tdm-data-delay = <0>;
  		qcom,tdm-data-align = <0>;
  	};
@@ -46,20 +80,22 @@ index be798d253..073537710 100644
  };
  
  &swr0 {
-@@ -259,6 +289,12 @@ wcd937x_tx: codec@0,3 {
+@@ -258,7 +310,13 @@ &swr0 {
+ 	wcd937x_tx: codec@0,3 {
  		compatible = "sdw20217010a00";
  		reg = <0 3>;
- 		qcom,tx-port-mapping = <1 1 2 3>;
+-		qcom,tx-port-mapping = <1 1 2 3>;
++		qcom,tx-port-mapping = <1 2 3 4>;
 +		/* Статический маппинг каналов слейв->мастер для TX-портов кодека.
 +		 * Без него драйвер берёт дефолты, порт настраивается неверно, и слейв
 +		 * висит в состоянии Alert (захват потом не стартует и валит ADSP).
 +		 * Порядок: adc1, adc2, adc3, mic0, dmic1, mbhc, dmic2..dmic7.
 +		 */
-+		qcom,tx-channel-mapping = /bits/ 8 <1 2 1 1 2 3 3 4 1 2 3 4>;
++		qcom,tx-channel-mapping = /bits/ 8 <1 1 2 1 2 3 1 2 3 4 3 4>;
  	};
  };
  
-@@ -271,6 +307,8 @@ wcd937x_rx: codec@0,4 {
+@@ -271,6 +329,8 @@ wcd937x_rx: codec@0,4 {
  		compatible = "sdw20217010a00";
  		reg = <0 4>;
  		qcom,rx-port-mapping = <1 2 3 4 5>;
@@ -68,7 +104,7 @@ index be798d253..073537710 100644
  	};
  };
  
-@@ -282,3 +320,14 @@ wcd_reset_n: wcd-reset-n-state {
+@@ -282,3 +342,14 @@ wcd_reset_n: wcd-reset-n-state {
  		output-high;
  	};
  };
