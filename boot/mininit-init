@@ -14,28 +14,57 @@ mount -t devtmpfs dev /dev 2>/dev/null
 mkdir -p /new_root
 
 DEV=/dev/sda15
+
+# Ждём появления раздела: UFS поднимается с разной задержкой, 20 секунд иногда не хватало.
 i=0
-while [ ! -b "$DEV" ] && [ $i -lt 40 ]; do
+while [ ! -b "$DEV" ] && [ $i -lt 120 ]; do
     i=$((i + 1))
     sleep 0.5
 done
 
-if [ ! -b "$DEV" ]; then
-    say "ERROR: $DEV not present"
-else
-    say "mounting $DEV"
-    if mount -o rw "$DEV" /new_root; then
-        say "root mounted, top level: $(ls /new_root | tr '\n' ' ')"
-        if [ -x /new_root/sbin/init ] || [ -L /new_root/sbin/init ]; then
-            say "switching root"
-            exec switch_root /new_root /sbin/init
-        else
-            say "ERROR: /sbin/init missing on the new root"
-        fi
-    else
-        say "ERROR: mount $DEV failed"
+[ -b "$DEV" ] || say "ERROR: $DEV not present after 60 s"
+
+# Монтирование с повторами. Раньше единственная неудача (грязный ext4, недописанный
+# журнал, поздний раздел) приводила к `exec /bin/sh`: шелл сразу завершался, ядро
+# паниковало ("Attempted to kill init"), и устройство уходило в цикл перезагрузок,
+# пока ABL не помечал слот нерабочим (потом — fastboot).
+mounted=0
+try=0
+while [ $mounted -eq 0 ] && [ $try -lt 60 ]; do
+    try=$((try + 1))
+
+    if mount -o rw "$DEV" /new_root 2>/dev/null; then
+        mounted=1
+        break
     fi
+
+    # вторая попытка: без проигрывания журнала — иногда так поднимается
+    if mount -o rw,noload "$DEV" /new_root 2>/dev/null; then
+        mounted=1
+        say "mounted with noload (journal skipped) on attempt $try"
+        break
+    fi
+
+    [ $((try % 5)) -eq 0 ] && say "mount attempt $try failed, retrying"
+    sleep 1
+done
+
+if [ $mounted -eq 1 ]; then
+    say "root mounted, top level: $(ls /new_root | tr '\n' ' ')"
+    if [ -x /new_root/sbin/init ] || [ -L /new_root/sbin/init ]; then
+        say "switching root"
+        exec switch_root /new_root /sbin/init
+    fi
+    say "ERROR: /sbin/init missing on the new root"
+else
+    say "ERROR: could not mount $DEV after 60 attempts"
 fi
 
-say "dropping to a shell"
-exec /bin/sh
+# Не выходим из PID 1: выход = паника ядра и бесконечная перезагрузка.
+while true; do
+    say "stuck: root filesystem is not mountable, retrying"
+    sleep 10
+    if mount -o rw "$DEV" /new_root 2>/dev/null; then
+        [ -x /new_root/sbin/init ] && exec switch_root /new_root /sbin/init
+    fi
+done
