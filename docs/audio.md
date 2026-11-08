@@ -169,3 +169,48 @@ mic inputs. Getting microphone capture means bringing up the WCD937x capture pat
 
 The ES7210 remains wired and usable as a *second* input, but on this board it is not
 what Android uses for the built-in mics.
+
+### Where the built-in microphones actually live (measured, 2026-11-08)
+
+The ES7210/TDM work above was chasing the wrong bus. The stock `mixer_paths.xml` proves it:
+
+```
+<path name="spkr-vi-record">
+    PRI_TDM_RX_VI_FB_MUX = PRI_TDM_TX_0   ← the smart amps' voice-isolation feedback
+<path name="amic2">
+    TX DEC0 MUX = SWR_MIC, TX SMIC MUX0 = SWR_MIC4, TX_CDC_DMA_TX_4 Channels = One
+```
+
+`PRI_TDM_TX_0` in `Four`/`S32_LE` is the amplifiers talking back for speaker protection —
+the amps are the source, so capturing it from the ADC side can only ever return zeros, which is
+exactly what every TDM variation measured (2/4 slots, TDM-DSP vs TDM-I2S, both sync polarities,
+`TX_0` vs `TX_1`, 16/32-bit, `ctrl_data_out_enable` passed to the DSP).
+
+The microphones are `amic2`/`amic3`: the **WCD9370** ADC, which reaches the AP over SoundWire
+(`va_swr_master` on bengal owns the `tx_swr` pins, LPI gpio0-2) and then a CDC DMA TX port.
+
+### SoundWire TX state and the two fixes found so far
+
+* Both codec slaves bound (`sdw:2:0:0217:010a:00:4` RX, `sdw:3:0:0217:010a:00:3` TX), but the
+  TX slave reports `Alert` instead of `Attached`, and capture fails with `hw_ptr = 0` and
+  `Input/output error` on any port (`TX_CODEC_DMA_TX_3/4`, 1 or 2 channels, 8 or 48 kHz).
+* The nodes were missing the static channel maps, so the driver logged
+  `Static channel mapping not specified using device channel maps`. Adding
+  `qcom,tx-channel-mapping = /bits/ 8 <1 2 1 1 2 3 3 4 1 2 3 4>` and
+  `qcom,rx-channel-mapping = /bits/ 8 <1 2 1 1 2 1 1 2>` (taken from the reference board)
+  removes the warning.
+* Adding a link with the VA macro (`<&vamacro 0>` + `VA_CODEC_DMA_TX_0`) makes the device fall
+  into a Qualcomm CrashDump at boot: the ADSP faults before any stream is opened, so that is not
+  the way in until the bus itself is healthy.
+* Crash log (ECC-damaged but readable): `arm-smmu c600000.iommu: Unhandled context fault:
+  fsr=0x402, SID=0xE3` right after the capture attempts. Playback never faults.
+
+### Next steps (in order)
+
+1. Get the TX slave out of `Alert`: compare the master's port configuration at `a740000`
+   (`din-ports = 3` while the controller reports 4) against the vendor values, and check that the
+   VA macro is actually clocked (`qcom,dmic-sample-rate` is missing from its node, the vendor
+   sets `qcom,va-dmic-sample-rate = <600000>`).
+2. Only then change the DAPM route to match the stock mux choice: `TX SMIC MUX0 = SWR_MIC4`
+   means the codec output must feed `TX SWR_INPUT4`, not `TX SWR_INPUT1`.
+3. Then point the capture link at the right CDC DMA TX port and verify with `arecord`.

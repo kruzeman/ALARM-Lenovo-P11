@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
-index be798d253..1a8885dc1 100644
+index be798d253..073537710 100644
 --- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
 +++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-audio.dtsi
 @@ -132,6 +132,22 @@ platform {
@@ -46,7 +46,29 @@ index be798d253..1a8885dc1 100644
  };
  
  &swr0 {
-@@ -282,3 +312,14 @@ wcd_reset_n: wcd-reset-n-state {
+@@ -259,6 +289,12 @@ wcd937x_tx: codec@0,3 {
+ 		compatible = "sdw20217010a00";
+ 		reg = <0 3>;
+ 		qcom,tx-port-mapping = <1 1 2 3>;
++		/* Статический маппинг каналов слейв->мастер для TX-портов кодека.
++		 * Без него драйвер берёт дефолты, порт настраивается неверно, и слейв
++		 * висит в состоянии Alert (захват потом не стартует и валит ADSP).
++		 * Порядок: adc1, adc2, adc3, mic0, dmic1, mbhc, dmic2..dmic7.
++		 */
++		qcom,tx-channel-mapping = /bits/ 8 <1 2 1 1 2 3 3 4 1 2 3 4>;
+ 	};
+ };
+ 
+@@ -271,6 +307,8 @@ wcd937x_rx: codec@0,4 {
+ 		compatible = "sdw20217010a00";
+ 		reg = <0 4>;
+ 		qcom,rx-port-mapping = <1 2 3 4 5>;
++		/* hph_l, hph_r, clsh, comp_l, comp_r, lo, dsd_r, dsd_l */
++		qcom,rx-channel-mapping = /bits/ 8 <1 2 1 1 2 1 1 2>;
+ 	};
+ };
+ 
+@@ -282,3 +320,14 @@ wcd_reset_n: wcd-reset-n-state {
  		output-high;
  	};
  };
