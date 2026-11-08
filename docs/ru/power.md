@@ -13,17 +13,50 @@ dmesg | tail                    # PM: suspend entry / exit
 После пробуждения выживают Wi-Fi, звук, тачскрин; пого-HID переподключается сервисом
 `j606f-hid-resume` (`rootfs/usr/local/bin/j606f-hid-rebind.sh`).
 
+### Что срывает сон и как это лечится
+
+Три устройства на этой машине ломают s2idle, поэтому
+`rootfs/usr/lib/systemd/system-sleep/50-j606f-resume` отвязывает их перед сном и возвращает
+после пробуждения:
+
+| Устройство | Симптом | Что делает хук |
+| --- | --- | --- |
+| пого-HID `i2c_hid_of` (`0-0060`, `1-0061`) | `i2c_hid_core_pm_resume ... returns -6`, suspend откатывается через 1 с | unbind / bind |
+| USB3-контроллер `4ef8800.usb` | `dwc3-qcom-legacy ...: port-1 HS-PHY not in L2`, suspend прерывается | unbind / bind (зарядка идёт через PMIC/tcpm, не страдает) |
+| UART Bluetooth `4a8c000.serial` | `pm_wakeup_irq = 114`, будит через ~1 с после входа в сон | `power/wakeup` disabled / enabled |
+
 ## Чехол (Hall-сенсор)
 
-Сенсор — `gpiochip0`, линия **36**, active-low. `j606f-lid.service` держит `gpiomon` и при закрытии
-чехла вызывает `systemctl suspend`:
+Сенсор — `gpiochip0`, линия **36**, active-low. В DT он оформлен как нормальный input-свитч
+(`sm6115p-lenovo-j606f.dts`):
 
 ```
-j606f-lid.service: ExecStart=/usr/bin/gpiomon -c gpiochip0 -e both 36
+key-lid {
+    gpios = <&tlmm 36 GPIO_ACTIVE_LOW>;
+    linux,input-type = <EV_SW>;
+    linux,code = <SW_LID>;
+    debounce-interval = <15>;
+    wakeup-source;
+};
 ```
 
-Пробуждение **по открытию чехла** пока не работает (нужен `wakeup-source` в узле GPIO в DTB);
-пробуждение — только кнопкой Power.
+`gpio-keys` превращает его в `SW_LID` на `/dev/input/event2` и помечает устройство как
+источник пробуждения (`/sys/devices/platform/gpio-keys/power/wakeup` → `enabled`), поэтому
+открытие чехла будит планшет.
+
+Сам `logind` крышку обрабатывать **не должен**: `gpio-keys` будит по любому изменению линии,
+и немедленный suspend по закрытию тут же будится тем же событием — получается цикл
+«уснул-проснулся». Поэтому `/etc/systemd/logind.conf.d/10-j606f-lid.conf` ставит
+`HandleLidSwitch=ignore`, а `j606f-lid.service` запускает `j606f-lid-daemon.py`: он ждёт
+3 секунды после закрытия (линия уже стабильна, фронт даёт только открытие) и затем усыпляет:
+
+```bash
+journalctl -u j606f-lid -f       # SW_LID -> 1 / cover closed -> suspend / SW_LID -> 0
+```
+
+KDE-шный PowerDevil по умолчанию тоже реагирует на крышку — нужно выставить `lidAction=0`
+(No action) для профилей `AC`, `Battery` и `LowBattery` в `~/.config/powermanagementprofilesrc`,
+иначе он шлёт свои suspend'ы поверх демона.
 
 ## Батарея
 
@@ -31,6 +64,18 @@ j606f-lid.service: ExecStart=/usr/bin/gpiomon -c gpiochip0 -e both 36
 
 ```
 mm8013
+```
+
+Контроллер GENI-I²C под топливным датчиком изредка отдаёт таймаут
+(`geni_i2c 4a80000.i2c: geni_i2c_gpi_xfer:I2C timeout`), и одного неудачного чтения регистра
+хватало, чтобы power_supply-ядро сообщило `driver failed to report 'present' property: -110` —
+KDE на пару секунд показывал «батарея отсутствует / 0 %». Патч
+`kernel/patches/mm8013-i2c-retry.patch` повторяет каждое чтение регистра четыре раза
+(пауза 2–4 мс), прежде чем вернуть ошибку:
+
+```bash
+cd /usr/src/linux && patch -p1 < .../kernel/patches/mm8013-i2c-retry.patch
+make ARCH=arm64 LLVM=1 M=drivers/power/supply modules
 ```
 
 Плюс `upower` для индикатора в KDE:

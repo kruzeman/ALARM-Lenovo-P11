@@ -24,6 +24,13 @@ install -Dm644 "$HERE/ucm/HiFi.conf" /usr/share/alsa/ucm2/Lenovo/TB-J606F/HiFi.c
 # висящие сессии, из-за которых вход зависает. Для X11-греeter'а нужен пакет xorg-xrandr.
 install -Dm644 "$HERE/etc/sddm.conf.d/20-x11.conf" /etc/sddm.conf.d/20-x11.conf
 
+# Чехол: крышку обрабатывает не logind (иначе цикл «уснул-проснулся»), а j606f-lid.service
+# с задержкой 3 с; хук сна отвязывает устройства, которые срывают s2idle.
+install -Dm644 "$HERE/etc/systemd/logind.conf.d/10-j606f-lid.conf" \
+	/etc/systemd/logind.conf.d/10-j606f-lid.conf
+install -Dm755 "$HERE/usr/lib/systemd/system-sleep/50-j606f-resume" \
+	/usr/lib/systemd/system-sleep/50-j606f-resume
+
 systemctl daemon-reload
 systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm
 systemctl set-default graphical.target

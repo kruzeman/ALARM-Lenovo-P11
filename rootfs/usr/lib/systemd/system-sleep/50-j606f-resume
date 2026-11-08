@@ -1,0 +1,91 @@
+#!/bin/bash
+# /usr/lib/systemd/system-sleep/50-j606f-resume
+#
+# Особенности s2idle на этом планшете:
+#  1) пого-HID (i2c_hid_of 0x0060/0x0061) не переживает resume: i2c_hid_core_pm_resume
+#     возвращает -6, и suspend откатывается через секунду — отвязываем HID перед сном;
+#  2) USB3-контроллер 4ef8800.usb не уводит PHY в L2 ("port-1 HS-PHY not in L2")
+#     и тоже срывает suspend — отвязываем его на время сна (зарядка идёт через PMIC/tcpm);
+#  3) канал DSI панели после пробуждения отвечает "Invalid response cmd", из-за чего
+#     яркость не восстанавливается, а upower ждёт следующего опроса батареи.
+
+SAVE=/run/j606f-sleep-brightness
+HID_CLIENTS="0-0060 1-0061"
+USB3_DEV="4ef8800.usb"
+USB3_DRV=""
+# UART Bluetooth (geniqup serial@4a8c000) держит wake-линию и мгновенно будит систему
+# (pm_wakeup_irq = 114): на время сна снимаем с него wakeup, после — возвращаем.
+BT_UART=/sys/bus/platform/devices/4a8c000.serial/power/wakeup
+
+# найти каталог драйвера, к которому привязан USB3-контроллер
+find_usb3_drv() {
+	for d in /sys/bus/platform/drivers/dwc3*; do
+		if [ -e "$d/$USB3_DEV" ]; then
+			USB3_DRV="$d"
+			return 0
+		fi
+	done
+	return 1
+}
+
+case "$1" in
+pre)
+	for b in /sys/class/backlight/*/; do
+		[ -r "$b/brightness" ] || continue
+		cat "$b/brightness" 2>/dev/null > "$SAVE"
+		break
+	done
+
+	# 1) пого-док
+	for c in $HID_CLIENTS; do
+		[ -e "/sys/bus/i2c/drivers/i2c_hid_of/$c" ] || continue
+		echo "$c" > /sys/bus/i2c/drivers/i2c_hid_of/unbind 2>/dev/null
+	done
+
+	# 2) USB3
+	if find_usb3_drv; then
+		echo "$USB3_DEV" > "$USB3_DRV/unbind" 2>/dev/null
+	fi
+
+	# 3) не даём UART Bluetooth будить систему
+	echo disabled > "$BT_UART" 2>/dev/null
+	;;
+post)
+	# 3) яркость: панель просыпается не сразу — пробуем несколько раз
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		done_ok=0
+		for b in /sys/class/backlight/*/; do
+			[ -w "$b/brightness" ] || continue
+			want=$(cat "$SAVE" 2>/dev/null)
+			[ -n "$want" ] || continue
+			echo "$want" > "$b/brightness" 2>/dev/null || continue
+			[ "$(cat "$b/brightness" 2>/dev/null)" = "$want" ] && done_ok=1
+		done
+		[ "$done_ok" = 1 ] && break
+		sleep 0.5
+	done
+
+	# пого-док обратно
+	for c in $HID_CLIENTS; do
+		[ -e "/sys/bus/i2c/devices/$c" ] || continue
+		echo "$c" > /sys/bus/i2c/drivers/i2c_hid_of/bind 2>/dev/null
+	done
+
+	# USB3 обратно
+	if find_usb3_drv; then
+		echo "$USB3_DEV" > "$USB3_DRV/bind" 2>/dev/null
+	else
+		for d in /sys/bus/platform/drivers/dwc3*; do
+			echo "$USB3_DEV" > "$d/bind" 2>/dev/null && break
+		done
+	fi
+
+	# заставить upower/DE перечитать батарею
+	udevadm trigger --subsystem-match=power_supply --action=change 2>/dev/null
+
+	# BT-uart снова может будить
+	echo enabled > "$BT_UART" 2>/dev/null
+	;;
+esac
+
+exit 0

@@ -1,18 +1,17 @@
 [Unit]
-Description=Lenovo TB-J606F cover (Hall sensor, tlmm 36) -> suspend
-Documentation=man:systemd.special(7)
+Description=Lenovo TB-J606F cover: SW_LID from gpio-keys -> suspend (with settle delay)
 After=multi-user.target
-# Only meaningful once the graphical session is up; a suspend during early boot
-# just delays the boot.
-ConditionPathExists=/dev/gpiochip0
+# Без графической сессии смысла нет, а ранний suspend только тормозит загрузку.
+ConditionPathExists=/dev/input/event2
 
 [Service]
 Type=simple
-# GPIO 36 is the Hall switch: closing the cover drives it low (confirmed by
-# gpiomon: falling on close, rising on open). libgpiod here is v1, hence -c.
-ExecStart=/usr/bin/sh -c 'exec stdbuf -oL gpiomon -c gpiochip0 -e falling 36 | while read -r ev; do logger -t j606f-lid "cover closed: $ev"; systemctl suspend; done'
+# Линия 36 занята gpio-keys (wakeup-source), поэтому читаем не gpiochip, а input-события.
+# Демон ждёт 3 секунды после закрытия и только потом усыпляет: иначе gpio-keys будит
+# систему тем же событием закрытия и получается цикл «уснул-проснулся».
+ExecStart=/usr/bin/python3 /usr/local/bin/j606f-lid-daemon.py
 Restart=always
-RestartSec=3
+RestartSec=2
 Nice=-5
 
 [Install]
