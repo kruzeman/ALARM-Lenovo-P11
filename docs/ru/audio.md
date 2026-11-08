@@ -139,3 +139,37 @@ ADSP — канал `IPCRTR` объявляется не в каждой заг�
 все сэмплы по-прежнему нулевые. Дальше по порядку: полярность `qcom,tdm-invert-sync` на TX-узле
 и на какой линии LPASS сидит выход АЦП (`gpio8` или `gpio9`), то есть не нужен ли порт
 `PRIMARY_TDM_TX_1`.
+
+
+### Микрофоны не на TDM — они на SoundWire-входах кодека
+
+Стоковый `mixer_paths.xml` (найден сканированием `/dev/sda14` по `<mixer>`) закрывает вопрос:
+
+```
+<path name="spkr-vi-record">
+    <ctl name="PRI_TDM_RX_VI_FB_MUX" value="PRI_TDM_TX_0" />
+    <ctl name="PRI_TDM_TX_0 Channels"  value="Four" />
+    <ctl name="PRI_TDM_TX_0 Format"    value="S32_LE" />
+    <ctl name="PRI_TDM_TX_0 SampleRate" value="KHZ_48" />
+</path>
+<path name="amic2">
+    <ctl name="TX DEC0 MUX"   value="SWR_MIC" />
+    <ctl name="TX SMIC MUX0"  value="SWR_MIC4" />
+    <ctl name="TX_CDC_DMA_TX_4 Channels" value="One" />
+    <ctl name="TX_AIF2_CAP Mixer DEC0" value="1" />
+</path>
+```
+
+`PRI_TDM_TX_0` в четырёхканальном `S32_LE` — это `spkr-vi-record`: обратная связь
+смарт-усилителей (VI-сенс для защиты динамика). Источник этого TX-потока — сами усилители,
+поэтому захват со стороны ES7210 физически не мог дать ничего, кроме нулей. Мы это и
+измерили во всех вариантах: 2/4 слота, TDM-DSP и TDM-I2S, обе полярности sync, `TX_0` и
+`TX_1`, 16 и 32 бита, передача `ctrl_data_out_enable` в DSP.
+
+Встроенные микрофоны — это `amic2`/`amic3` → `TX DEC0 MUX = SWR_MIC`,
+`TX SMIC MUX0 = SWR_MIC4` → `TX_CDC_DMA_TX_4`, то есть микрофонные входы кодека
+**WCD9370** по SoundWire. Чтобы получить захват, нужно поднимать тракт WCD937x
+(SoundWire → кодек → CDC_DMA_TX), а не дальше крутить TDM.
+
+ES7210 остаётся подключённым и рабочим как второй вход, но на этой плате Android
+использует для встроенных микрофонов не его.

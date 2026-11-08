@@ -136,3 +136,36 @@ path on, mics selected (`0x43` bit 4), the AFE port starts and `arecord` writes 
 file — but every sample is still zero. Next candidates, in order: `qcom,tdm-invert-sync`
 polarity on the TX node, and whether the ADC drives LPASS `gpio8` or `gpio9`
 (`SOUT1`/`SOUT2`), i.e. whether the port should be `PRIMARY_TDM_TX_1`.
+
+### The microphones are not on TDM — they are on the codec's SoundWire mics
+
+The stock `mixer_paths.xml` (found by scanning `/dev/sda14` for `<mixer>`) settles it:
+
+```
+<path name="spkr-vi-record">
+    <ctl name="PRI_TDM_RX_VI_FB_MUX" value="PRI_TDM_TX_0" />
+    <ctl name="PRI_TDM_TX_0 Channels"  value="Four" />
+    <ctl name="PRI_TDM_TX_0 Format"    value="S32_LE" />
+    <ctl name="PRI_TDM_TX_0 SampleRate" value="KHZ_48" />
+</path>
+<path name="amic2">
+    <ctl name="TX DEC0 MUX"   value="SWR_MIC" />
+    <ctl name="TX SMIC MUX0"  value="SWR_MIC4" />
+    <ctl name="TX_CDC_DMA_TX_4 Channels" value="One" />
+    <ctl name="TX_AIF2_CAP Mixer DEC0" value="1" />
+</path>
+```
+
+`PRI_TDM_TX_0` in four-channel `S32_LE` is `spkr-vi-record`: the smart amplifiers'
+voice-isolation feedback, i.e. the amps are the *source* of that TX stream. Capturing it
+on the ES7210 side can only ever return zeros, which is exactly what we measured through
+every variation (2/4 slots, TDM-DSP vs TDM-I2S, both sync polarities, `TX_0` vs `TX_1`,
+16- and 32-bit words, `ctrl_data_out_enable` passed to the DSP).
+
+The built-in microphones are `amic2`/`amic3` → `TX DEC0 MUX = SWR_MIC`,
+`TX SMIC MUX0 = SWR_MIC4` → `TX_CDC_DMA_TX_4`, i.e. the **WCD9370** codec's SoundWire
+mic inputs. Getting microphone capture means bringing up the WCD937x capture path
+(SoundWire bus → codec → CDC_DMA_TX), not more TDM tuning.
+
+The ES7210 remains wired and usable as a *second* input, but on this board it is not
+what Android uses for the built-in mics.
