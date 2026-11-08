@@ -83,6 +83,20 @@ make ARCH=arm64 LLVM=1 M=drivers/power/supply modules
 upower -i /org/freedesktop/UPower/devices/battery_mm8013 | grep -E "percentage|capacity"
 ```
 
+### Desktop boots without battery and brightness
+
+`upowerd` enumerates `/sys/class/power_supply` on start, and the fuel gauge lives on the same
+flaky GENI-I²C bus. Early in the boot that read blocks past the default 90 s
+`TimeoutStartSec`, systemd kills the unit — and `plasmashell` and `powerdevil` die with it,
+so KDE shows no battery and no working brightness slider until both come back by themselves
+(a couple of minutes). `rootfs/etc/systemd/system/upower.service.d/10-j606f-timeout.conf`
+raises the timeout to 300 s and restarts the unit on failure.
+
+Brightness itself is restored by `systemd-backlight@backlight:5e94000.dsi.0` from
+`/var/lib/systemd/backlight/`; if the saved value is a dim one from a previous session the
+panel comes up almost black — write a sane value once (`echo 1400 > /sys/class/backlight/*/brightness`)
+and it is what gets saved.
+
 ## Memory (zram)
 
 4 GB is tight for KDE, so zram with zstd is enabled:

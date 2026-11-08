@@ -30,6 +30,10 @@ install -Dm644 "$HERE/etc/systemd/logind.conf.d/10-j606f-lid.conf" \
 	/etc/systemd/logind.conf.d/10-j606f-lid.conf
 install -Dm755 "$HERE/usr/lib/systemd/system-sleep/50-j606f-resume" \
 	/usr/lib/systemd/system-sleep/50-j606f-resume
+# upowerd упирается в таймауты I2C при старте и не успевает в штатные 90 с —
+# без запаса systemd убивает его вместе с plasmashell/powerdevil.
+install -Dm644 "$HERE/etc/systemd/system/upower.service.d/10-j606f-timeout.conf" \
+	/etc/systemd/system/upower.service.d/10-j606f-timeout.conf
 
 systemctl daemon-reload
 systemctl enable j606f-touch j606f-lid j606f-hid-resume upower bluetooth sddm

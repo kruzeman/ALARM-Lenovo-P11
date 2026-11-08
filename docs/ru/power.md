@@ -84,6 +84,20 @@ make ARCH=arm64 LLVM=1 M=drivers/power/supply modules
 upower -i /org/freedesktop/UPower/devices/battery_mm8013 | grep -E "percentage|capacity"
 ```
 
+### Стол загружается без батареи и яркости
+
+`upowerd` при старте обходит `/sys/class/power_supply`, а топливный датчик сидит на той же
+проблемной шине GENI-I²C. В начале загрузки это чтение блокируется дольше штатных 90 с
+`TimeoutStartSec`, systemd убивает юнит — вместе с ним падают `plasmashell` и `powerdevil`,
+и в KDE пропадают батарея и ползунок яркости, пока оба не поднимутся сами (пара минут).
+`rootfs/etc/systemd/system/upower.service.d/10-j606f-timeout.conf` поднимает таймаут до 300 с
+и перезапускает юнит при сбое.
+
+Саму яркость восстанавливает `systemd-backlight@backlight:5e94000.dsi.0` из
+`/var/lib/systemd/backlight/`; если там сохранено тусклое значение с прошлой сессии, панель
+стартует почти чёрной — достаточно один раз записать нормальное
+(`echo 1400 > /sys/class/backlight/*/brightness`), и сохранится уже оно.
+
 ## Память (zram)
 
 4 ГБ ОЗУ мало для KDE, поэтому включён zram с zstd:
