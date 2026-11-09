@@ -309,27 +309,27 @@ and an `EnableSequence` that sets `MultiMedia2 Mixer TX_CODEC_DMA_TX_3`, `ADC2 M
 after boot, and `pw-record --rate 48000 --channels 1 --format s16` returns live signal (measured: peak 32768
 with occasional transients, RMS ~3.8k for room noise at unity gain).
 
-**Known limitation: only the first capture after a boot delivers audio.** Everything measured so far, so the
-next person does not repeat it:
+**Known limitation: every capture delivers only ~0.5 s of audio, then digital silence.** This is not a
+"reopen" problem — it reproduces inside the very first stream. Measured facts:
 
-- Within a single stream: about 0.5 s of real audio, then exact zeros for the rest of the capture. So the
-  codec stops transmitting shortly after the stream starts, it is not "no data from the first period".
-- `dmesg` during the failure: `qcom-soundwire a740000.soundwire: qcom_swrm_irq_handler: SWR read FIFO
-  underflow fifo status 0x3` — the master's read FIFO is empty, i.e. the slave is not putting data on the bus.
-- The TX slave's state: `Attached` on a fresh boot, `Alert` from the first teardown onwards. Note that a stream
-  can still deliver audio while the slave already reads `Alert`, so `Alert` alone is not the switch.
-- Register dumps taken **during** the stream (working vs silent) are identical for all three sides:
-  `sdw:3:…-wcd937x_csr` (codec), `a620000.codec-tx_macro` (TX macro) and
-  `master-3-0/qualcomm-sdw/qualcomm-registers` (bus master). Dumped after the stream they are identical too,
-  which is expected — DAPM powers everything down.
-- Ruled out as fixes: re-applying the FE route (`MultiMedia2 Mixer TX_CODEC_DMA_TX_3` 0→1, including while the
-  stream is open), toggling the TX-macro muxes between captures, keeping the SoundWire stream enabled by
-  skipping `sdw_disable_stream()`/`sdw_deprepare_stream()` in `qcom_snd_sdw_hw_free()`, and re-probing the
-  codec/machine modules (`modprobe -r snd_soc_sm8250 … ; modprobe …`) — the slave stays `Alert` and the second
-  capture stays silent. Spacing the captures out is not a rule either: back-to-back and 6-second-apart runs both
-  succeed and fail at random.
+- Per-0.5 s RMS of a 5 s capture: `[711, 15, 0, 0, 0, …]` — one short burst, then exact zeros (digital silence,
+  not a quiet room).
+- The DSP keeps streaming: `ASM_CLIENT_EVENT_DATA_READ_DONE` fires continuously (509 events over 5 s, counter
+  climbing from #14 to #526, stream state RUNNING). So the DSP is delivering buffers — they are simply full of
+  zeros, i.e. the break is upstream of the DSP (codec -> SoundWire -> TX macro).
+- During the silent phase the TX macro is still clocked (`LPASS_CLK_ID_TX_CORE_MCLK` 19.2 MHz,
+  `lpass-tx-mclk` 9.6 MHz, both `Y`) and both the slave and the master are `active`.
+- Codec register dump taken twice inside one stream (early, while audio flows, and late, during silence):
+  only `0x3125` changes, `0x0a -> 0x08` — that is `WCD937X_MBHC_NEW_FSM_STATUS`, the headset-jack state machine.
+  The TX-macro register dump does not change at all. Turning `MBHC Switch` off before the capture does not help,
+  so the jack detector is a red herring.
+- The SoundWire start sequence is textbook: `port_params(bank1)` -> bank switch -> `prep(bank0)` ->
+  `port_params(bank0)` -> `chn_en en=1 addr=0x220 ch_mask=0x1` -> bank switch. Teardown mirrors it and disables
+  the channel in both banks. Nothing in this sequence differs between a working and a silent stream.
 
-Next step: instrument the SoundWire core's slave-port programming (`sdw_prep_deprep_slave_ports()`,
-`sdw_enable_ports()`) and the codec's `wcd9370_interrupt_callback()` — the working hypothesis is that the codec
-raises an alert that nobody acknowledges when the bus is torn down, after which its TX port stops feeding the
-FIFO, and the bank/port enable written on the next stream lands in a bank the codec no longer watches.
+Where to look next: the break is between the codec's ADC/TX port and the data the master reads out. The codec's
+TX port stays enabled while its register map is unchanged, so the prime suspects are the analog capture path
+powering down silently (mic bias / ADC bias not held by DAPM) and the SWR master's read-FIFO underflow
+(`qcom_swrm_irq_handler: SWR read FIFO underflow fifo status 0x3` right at the stall). Instrument the codec's
+`dapm_widget_event` for `ADC2`/`TX SWR` widgets and the qcom master's read-FIFO path, and try a capture with
+`MIC BIAS2` forced on via a `snd_soc_dapm_force_enable_pin()` patch.
