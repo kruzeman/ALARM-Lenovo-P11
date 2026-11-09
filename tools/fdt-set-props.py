@@ -112,6 +112,8 @@ def encode_value(text):
         return b""
     if kind == "str":
         return rest.encode() + b"\0"
+    if kind == "bytes":
+        return bytes(int(x, 0) & 0xFF for x in rest.split(",") if x.strip())
     if kind == "u32":
         cells = [int(x, 0) for x in rest.split(",") if x.strip()]
         return b"".join(struct.pack(">I", c & 0xFFFFFFFF) for c in cells)

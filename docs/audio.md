@@ -235,3 +235,29 @@ Remaining: capture still ends with `EIO` on the first read — the DSP never han
 buffers. `hw_params`, prepare and port start complete without errors, and the kernel log stays
 empty even with dyndbg on `soundwire`, `wcd937x` and `q6asm`. Next step is the ASM session to
 AFE port relationship on the ADSP side, not the bus configuration.
+
+### Built-in mic capture: current state (WCD9370 over SoundWire)
+
+The DT is what decides whether capture is even reachable, and the booted image must be built from the tree —
+not from an older dump. With the tree DTB (`sm6115p-lenovo-j606f-hx83102p.dtb`) three things changed at once:
+
+- built-in mic link carries the real chain, `codec { sound-dai = <&wcd937x 1>, <&swr0 0>, <&vamacro 0> }`,
+  `cpu { sound-dai = <&q6afedai VA_CODEC_DMA_TX_0> }` — an older image pointed the same link at the ES7210
+  (`<&es7210>`), so the VA_CODEC_DMA_TX_0 backend was never found and capture failed at `open()` with
+  `EINVAL` / `no BE found for VA_CODEC_DMA_TX_0 Capture`;
+- the TX SoundWire master has `qcom,din-ports = <4>` and 4-entry `qcom,ports-*` tables, matching the
+  controller (otherwise `din-ports (3) mismatch with controller (4)`);
+- the codec slave carries `qcom,tx-port-mapping = <1 2 3 4>` and a 12-byte `qcom,tx-channel-mapping`.
+
+Result with that image: **both SoundWire slaves read `Attached`** (the TX slave used to sit in `Alert`, which
+alone explains `EIO`/zeros), the card registers with no route errors, and capture no longer fails to open.
+
+What is still open: `arecord -D hw:0,1` starts and then **blocks in the kernel** (`arecord` in state `D`, open
+PCM stays `OPEN` with a dead owner) — the stream runs but the DSP never delivers TX buffers. A blocked
+capture cannot be cleared without a reboot, and every reboot currently costs minutes because
+`j606f-wifi-reprobe` was removed during the CFI investigation.
+
+Next steps (in order): restore `j606f-wifi-reprobe`; run the capture **non-blocking** (`arecord -N`) so the
+kernel survives the attempt; read the instrumented `wcd937x_sdw_hw_params()` `dev_info` to see whether the
+codec is configured at all and with which ports/channels; then look at the AFE/q6asm side that is supposed to
+produce the TX buffers.
