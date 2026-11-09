@@ -279,3 +279,39 @@ So the VA backend gets the bus further (attached, stream opens) at the cost of a
 TX-macro backend does not even attach. Next diagnostic that does not need a live console: let the capture
 wedge, power-cycle, then read `journalctl -k -b -1 | tail -60` — journald persists kernel messages to disk,
 so the last lines before the hang (including the instrumented `hw_params` `dev_info`) survive.
+
+### Working configuration: built-in microphones
+
+The capture path is: codec ADC (ADC2 <- AMIC2) -> port 2 of the TX SoundWire slave -> bus `swr0`
+(`a740000`, clocked by the TX macro) -> `TX SWR_INPUT1` -> `TX SMIC MUX0` (`SWR_MIC1`) -> `TX DEC0 MUX`
+(`SWR_MIC`) -> `TX_AIF1_CAP Mixer DEC0` -> CDC DMA TX3 -> DSP (`TX_CODEC_DMA_TX_3`).
+
+Two mistakes kept the path dead:
+
+1. The DAI link used `&vamacro`. The VA macro serves voice activation; the TX bus is clocked by `&txmacro`
+   and the codec TX data goes through it. With the VA macro the card registered and the SoundWire stream was
+   prepared, but the DSP never received a sample.
+2. The three TX-macro muxes (`TX SMIC MUX0`, `TX DEC0 MUX`, `TX_AIF1_CAP Mixer DEC0`) are off by default.
+   While `TX_AIF1_CAP Mixer DEC0` is off, `q6asm_read()` returns 0 for every period but no `DATA_READ_DONE`
+   ever arrives, so `snd_pcm_lib_read` gives up after ~0.7 s with `-EIO` ("capture read timeout").
+
+Widget names matter: this SoC is `lpass_ver_10_sm6115`, which uses the `tx_macro_dapm_widgets_v9_2` set where
+the inputs are `TX SWR_INPUT0..7`. The newer sm8250/sm8450 sets call the same inputs `TX SWR_ADCn`; using
+those names makes the card fail with `ASoC: Failed to add route`.
+
+No kernel patch is required for any of this — the working setup is DTS plus UCM only. (The `VA_CODEC_DMA_TX_0`
+experiments that produced the `sdw_stream_add_slave()` NULL dereference were a dead end: `VA_CODEC_DMA_TX_0`
+is missing from `qcom_snd_is_sdw_dai()`, so `qcom_snd_sdw_startup()` returned before setting the stream.)
+
+`rootfs/usr/share/alsa/ucm2/Lenovo/TB-J606F/HiFi.conf` gains a `Mic` device with `CapturePCM "hw:${CardId},1"`
+and an `EnableSequence` that sets `MultiMedia2 Mixer TX_CODEC_DMA_TX_3`, `ADC2 MUX`, `TX SMIC MUX0`,
+`TX DEC0 MUX` and `TX_AIF1_CAP Mixer DEC0`. PipeWire then exposes "Built-in microphones" as a source right
+after boot, and `pw-record --rate 48000 --channels 1 --format s16` returns live signal (measured: peak 32768
+with occasional transients, RMS ~3.8k for room noise at unity gain).
+
+**Known limitation.** Only the first capture after a boot (or after reloading the sound modules) delivers
+audio; every following capture returns silence. `hw_free` runs and `sdw_disable_stream()` /
+`sdw_deprepare_stream()` both return 0, `hw_params` is re-applied with the same port/channel config, and no
+error is logged — the codec simply stops putting data on the bus after the first stream is torn down, i.e. the
+SoundWire slave's TX port is not re-armed. Toggling the FE route or the TX-macro muxes between captures does
+not help. This needs a separate look at the slave port enable/bank-switch path on stream restart.

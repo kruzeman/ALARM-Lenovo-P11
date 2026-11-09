@@ -146,13 +146,21 @@ appears, and the MCU then idles so a later unbind/bind answers `GPI transfer fai
 `touchpad@60` node is enough and the touchpad works. If the touchpad ever goes silent, reseat the dock and
 reboot — the descriptor is read once, at probe.
 
-## Wi-Fi watchdog
+## Wi-Fi watchdog: do not enable it
 
-`ath10k_snoc` (WCN3990) can lose `wlan0` not only at boot but during a session: the interface disappears
-entirely and does not come back by itself. `j606f-wifi-reprobe` only covers boot, so
-`j606f-wifi-watchdog.timer` runs `j606f-wifi-watchdog.sh` every minute: if a wireless interface exists it
-just brings a `down` link up, and if there is none it stops NetworkManager, re-probes the driver
-(three reload attempts), and starts NetworkManager again.
+`ath10k_snoc` (WCN3990) can lose `wlan0`, but reloading the driver to "fix" that is worse than the problem.
+`j606f-wifi-watchdog.timer` (a minute-by-minute check that re-probes the driver when no wireless interface
+is present) was tried and **made every boot worse**: on a normal boot `wlan0` appears a few seconds after
+the WCN3990 firmware handshake, and the timer fired before that, unloading `ath10k_snoc` in the middle of
+`ath10k_qmi_driver_event_work`. The kernel logged
+
+    WARNING: lib/radix-tree.c:572 at delete_node+0x2b4/0x2c8
+    Workqueue: ath10k_qmi_driver_event ath10k_qmi_driver_event_work [ath10k_snoc]
+
+and after that the WLAN service on the ADSP stayed dead: no `wlan0`, no `host capability request rejected`
+either — just nothing, until a full power cycle. Both `j606f-wifi-watchdog.timer` and
+`j606f-wifi-reprobe.service` are therefore disabled by default; if Wi-Fi really is gone, power the tablet
+off completely (hold the button) instead of reloading the driver at runtime.
 
 ## Hang: `CFI failure at notifier_call_chain`
 

@@ -46,8 +46,13 @@ install -Dm644 "$HERE/etc/systemd/system/j606f-usb-gadget.service" /etc/systemd/
 install -Dm644 "$HERE/etc/systemd/system/j606f-wifi-reprobe.service" /etc/systemd/system/j606f-wifi-reprobe.service
 
 systemctl daemon-reload
-systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe upower bluetooth plasmalogin
-systemctl enable j606f-wifi-watchdog.timer j606f-power-profiles
+systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget upower bluetooth plasmalogin
+systemctl enable j606f-power-profiles
+# j606f-wifi-reprobe и j606f-wifi-watchdog НЕ включаем: перепривязка ath10k_snoc
+# в рантайме рвёт инициализацию WCN3990 (radix-tree WARNING в
+# ath10k_qmi_driver_event_work) и после этого WLAN-сервис ADSP не поднимается
+# до полного снятия питания. Скрипты остаются на месте для ручного запуска.
+systemctl disable j606f-wifi-reprobe j606f-wifi-watchdog.timer 2>/dev/null || true
 # j606f-sensor-proxy ставится, но не включается: он требует карты sensor_pd
 # (adsps.jsn) и на этом устройстве ADSP уходит в handover-loop — включать
 # только осознанно, см. docs/sensors.md.
