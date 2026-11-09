@@ -1,0 +1,12 @@
+[Unit]
+Description=Power profiles (org.freedesktop.UPower.PowerProfiles) for Lenovo TB-J606F
+After=dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/j606f-power-profiles
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

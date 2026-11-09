@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""j606f-power-profiles — профили производительности для Lenovo Tab P11.
+
+Зачем свой сервис: в Arch Linux ARM нет пакета power-profiles-daemon, а без него
+Plasma (PowerDevil) вообще не показывает переключатель профилей — ему нужен
+D-Bus-сервис org.freedesktop.UPower.PowerProfiles. На этом SoC нет и ACPI
+platform_profile, так что PPD было бы не на что опереться.
+
+Мы занимаем это же имя и реализуем тот API, которым пользуется Plasma 6:
+свойства ActiveProfile/Profiles и методы HoldProfile/ReleaseProfile (PowerDevil
+держит профиль через hold, например когда идёт игра).
+
+Маппинг на железо (governor'ы на sm6115: performance, schedutil):
+  power-saver — schedutil, потолок 1.4 ГГц на обоих кластерах;
+  balanced    — schedutil, полный диапазон;
+  performance — governor performance и полный диапазон.
+"""
+
+import glob
+import os
+import sys
+
+from gi.repository import Gio, GLib
+
+BUS_NAME = "org.freedesktop.UPower.PowerProfiles"
+OBJECT_PATH = "/org/freedesktop/UPower/PowerProfiles"
+IFACE = "org.freedesktop.UPower.PowerProfiles"
+DRIVER = "j606f"
+
+PROFILES = ["power-saver", "balanced", "performance"]
+SAVER_MAX_KHZ = 1401600
+
+INTROSPECTION = """
+<node>
+  <interface name="org.freedesktop.UPower.PowerProfiles">
+    <method name="HoldProfile">
+      <arg type="s" name="profile" direction="in"/>
+      <arg type="s" name="reason" direction="in"/>
+      <arg type="s" name="application_id" direction="in"/>
+      <arg type="u" name="cookie" direction="out"/>
+    </method>
+    <method name="ReleaseProfile">
+      <arg type="u" name="cookie" direction="in"/>
+    </method>
+    <property name="ActiveProfile" type="s" access="readwrite"/>
+    <property name="PerformanceDegraded" type="s" access="read"/>
+    <property name="Profiles" type="aa{sv}" access="read"/>
+    <property name="Actions" type="as" access="read"/>
+    <property name="ActiveProfileHolds" type="aa{sv}" access="read"/>
+  </interface>
+</node>
+"""
+
+state = {
+    "active": "balanced",
+    "holds": {},          # cookie -> (profile, reason, app)
+    "next_cookie": 1,
+}
+
+
+def log(msg):
+    print(f"j606f-power-profiles: {msg}", flush=True)
+
+
+def cpu_dirs():
+    return sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
+
+
+def write(path, value):
+    try:
+        with open(path, "w") as f:
+            f.write(str(value))
+    except OSError as exc:
+        log(f"{path}: {exc}")
+
+
+def apply_profile(profile):
+    for cf in cpu_dirs():
+        cpu = os.path.basename(os.path.dirname(cf))
+        max_freq = int(open(f"{cf}/cpuinfo_max_freq").read())
+        try:
+            governors = open(f"{cf}/scaling_available_governors").read().split()
+        except OSError:
+            continue
+        if profile == "performance" and "performance" in governors:
+            write(f"{cf}/scaling_governor", "performance")
+            write(f"{cf}/scaling_max_freq", max_freq)
+        elif profile == "power-saver":
+            if "schedutil" in governors:
+                write(f"{cf}/scaling_governor", "schedutil")
+            write(f"{cf}/scaling_max_freq", min(SAVER_MAX_KHZ, max_freq))
+        else:  # balanced
+            if "schedutil" in governors:
+                write(f"{cf}/scaling_governor", "schedutil")
+            write(f"{cf}/scaling_max_freq", max_freq)
+        log(f"  {cpu}: {profile} -> governor "
+            f"{open(cf + '/scaling_governor').read().strip()}, "
+            f"max {open(cf + '/scaling_max_freq').read().strip()}")
+
+
+def effective_profile():
+    """Держимые профили важнее выбранного вручную: performance > balanced > saver."""
+    held = {p for p, _r, _a in state["holds"].values()}
+    for p in ("performance", "balanced", "power-saver"):
+        if p in held:
+            return p
+    return state["active"]
+
+
+def set_active(profile, connection=None):
+    if profile not in PROFILES:
+        raise ValueError(f"unknown profile {profile}")
+    state["active"] = profile
+    eff = effective_profile()
+    log(f"профиль: выбран {profile}, действует {eff}")
+    apply_profile(eff)
+    if connection is not None:
+        emit_changed(connection)
+
+
+def variants_for_profiles():
+    # Ключи продублированы в обоих регистрах: power-profiles-daemon отдаёт
+    # "profile"/"driver", а PowerDevil ищет "Profile"/"Driver" — с одним
+    # набором он видит три профиля с пустыми именами.
+    out = []
+    for p in PROFILES:
+        out.append({
+            "profile": GLib.Variant("s", p),
+            "Profile": GLib.Variant("s", p),
+            "driver": GLib.Variant("s", DRIVER),
+            "Driver": GLib.Variant("s", DRIVER),
+        })
+    return GLib.Variant("aa{sv}", out)
+
+
+def variants_for_holds():
+    return GLib.Variant("aa{sv}", [
+        {
+            "profile": GLib.Variant("s", p),
+            "reason": GLib.Variant("s", r),
+            "application_id": GLib.Variant("s", a),
+            "cookie": GLib.Variant("u", c),
+        }
+        for c, (p, r, a) in state["holds"].items()
+    ])
+
+
+def emit_changed(connection):
+    connection.emit_signal(
+        None, OBJECT_PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+        GLib.Variant("(sa{sv}as)", (
+            IFACE,
+            {
+                "ActiveProfile": GLib.Variant("s", effective_profile()),
+                "ActiveProfileHolds": variants_for_holds(),
+            },
+            [],
+        )),
+    )
+
+
+def on_method(connection, sender, path, iface, method, params, invocation):
+    if method == "HoldProfile":
+        profile, reason, app = params.unpack()
+        if profile not in PROFILES:
+            invocation.return_dbus_error("org.freedesktop.DBus.Error.InvalidArgs",
+                                         f"unknown profile {profile}")
+            return
+        cookie = state["next_cookie"]
+        state["next_cookie"] += 1
+        state["holds"][cookie] = (profile, reason, app)
+        log(f"HoldProfile({profile}, {reason}, {app}) -> cookie {cookie}")
+        apply_profile(effective_profile())
+        emit_changed(connection)
+        invocation.return_value(GLib.Variant("(u)", (cookie,)))
+        return
+
+    if method == "ReleaseProfile":
+        (cookie,) = params.unpack()
+        if state["holds"].pop(cookie, None) is None:
+            invocation.return_dbus_error("org.freedesktop.DBus.Error.InvalidArgs",
+                                         f"no such cookie {cookie}")
+            return
+        log(f"ReleaseProfile({cookie})")
+        apply_profile(effective_profile())
+        emit_changed(connection)
+        invocation.return_value(None)
+        return
+
+    invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+
+def on_get_property(connection, sender, path, iface, prop):
+    if prop == "ActiveProfile":
+        return GLib.Variant("s", effective_profile())
+    if prop == "PerformanceDegraded":
+        return GLib.Variant("s", "")
+    if prop == "Profiles":
+        return variants_for_profiles()
+    if prop == "Actions":
+        return GLib.Variant("as", [])
+    if prop == "ActiveProfileHolds":
+        return variants_for_holds()
+    return None
+
+
+def on_set_property(connection, sender, path, iface, prop, value):
+    if prop == "ActiveProfile":
+        set_active(value.unpack(), connection)
+        return True
+    return False
+
+
+def on_bus_acquired(connection, name):
+    info = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION)
+    connection.register_object(OBJECT_PATH, info.interfaces[0],
+                               on_method, on_get_property, on_set_property)
+    log(f"имя {name} занято, профили: {', '.join(PROFILES)}")
+    set_active("balanced", connection)
+
+
+def main():
+    if os.geteuid() != 0:
+        sys.exit("нужен root: сервис пишет в /sys/.../cpufreq")
+    Gio.bus_own_name(Gio.BusType.SYSTEM, BUS_NAME, Gio.BusNameOwnerFlags.NONE,
+                     on_bus_acquired, None, None)
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

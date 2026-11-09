@@ -198,3 +198,27 @@ workqueue и освобождает контейнер в deinit. Проверк
 уровня error. Вреда нет — звук, Wi-Fi и зарядка работают, — но `dmesg` заполняется за минуты и прячет
 настоящие ошибки; вариант с `dev_err_ratelimited` на этом ядре не сработал. Патч
 `kernel/patches/0009-remoteproc-quiet-handover-warning.patch` переводит сообщение в `dev_dbg`.
+
+## Профили производительности (`power-saver` / `balanced` / `performance`)
+
+Plasma не показывает переключатель профилей: в Arch Linux ARM нет пакета `power-profiles-daemon`, а на SoC
+нет ACPI `platform_profile` — PowerDevil просто не с кем разговаривать. Эту нишу занимает
+`j606f-power-profiles`: он владеет системным шинным именем `org.freedesktop.UPower.PowerProfiles` и
+реализует API, которым пользуется Plasma 6 — `ActiveProfile`, `Profiles` и пару
+`HoldProfile`/`ReleaseProfile`, которую PowerDevil держит, пока запущена игра.
+
+Маппинг на то, что есть у sm6115 (`performance` и `schedutil`, 300 МГц–2.016 ГГц):
+
+- `power-saver` — `schedutil`, потолок 1.4 ГГц на обоих кластерах;
+- `balanced` — `schedutil`, полный диапазон;
+- `performance` — governor `performance`, полный диапазон.
+
+Две детали, которые стоили времени: сервису нужен policy-файл D-Bus
+(`rootfs/usr/share/dbus-1/system.d/org.freedesktop.UPower.PowerProfiles.conf`), иначе любой вызов
+отвечает `Access denied`, хотя свойства читаются; и в элементах `Profiles` нужны оба набора ключей —
+`profile`/`driver` и `Profile`/`Driver`, с одними строчными PowerDevil показывает три профиля с пустыми
+именами.
+
+Проверено через `busctl`: `profileChoices` отдаёт `power-saver balanced performance`, `setProfile
+performance` переключает governor на `performance`, `HoldProfile`/`ReleaseProfile` перекрывают и
+возвращают выбранный вручную профиль.

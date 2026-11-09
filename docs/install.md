@@ -183,3 +183,27 @@ this device), and `q6v5_handover_interrupt()` logged every one of them at error 
 audio, Wi-Fi and charging keep working — but it fills `dmesg` in minutes and hides real errors, and the
 rate-limited variant did not take effect on this kernel. Patch
 `kernel/patches/0009-remoteproc-quiet-handover-warning.patch` moves it to `dev_dbg`.
+
+## Power profiles (`power-saver` / `balanced` / `performance`)
+
+Plasma shows no power-profile switcher on this device because Arch Linux ARM has no
+`power-profiles-daemon` package and the SoC provides no ACPI `platform_profile`; PowerDevil simply has no
+service to talk to. `j606f-power-profiles` fills that hole: it owns the system-bus name
+`org.freedesktop.UPower.PowerProfiles` and implements the API Plasma 6 uses — `ActiveProfile`, `Profiles`
+and the `HoldProfile`/`ReleaseProfile` pair that PowerDevil holds while a game runs.
+
+Mapping onto what sm6115 offers (`performance` and `schedutil` governors, 300 MHz–2.016 GHz):
+
+- `power-saver` — `schedutil`, ceiling 1.4 GHz on both clusters;
+- `balanced` — `schedutil`, full range;
+- `performance` — `performance` governor, full range.
+
+Two details that cost time: the service needs a D-Bus policy file
+(`rootfs/usr/share/dbus-1/system.d/org.freedesktop.UPower.PowerProfiles.conf`), otherwise every call is
+answered `Access denied` even though properties read fine; and entries in `Profiles` must carry both
+`profile`/`driver` and `Profile`/`Driver` keys — with the lowercase pair alone PowerDevil lists three
+profiles with empty names.
+
+Verified with `busctl`: `profileChoices` returns `power-saver balanced performance`, `setProfile
+performance` switches the governor to `performance`, `HoldProfile`/`ReleaseProfile` override and restore the
+manually chosen profile.

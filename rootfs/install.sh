@@ -6,6 +6,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 install -m644 "$HERE"/etc/systemd/system/j606f-*.service /etc/systemd/system/
 install -Dm644 "$HERE"/etc/plasmalogin.conf.d/10-autologin.conf /etc/plasmalogin.conf.d/10-autologin.conf
+install -Dm644 "$HERE"/usr/share/dbus-1/system.d/org.freedesktop.UPower.PowerProfiles.conf \
+    /usr/share/dbus-1/system.d/org.freedesktop.UPower.PowerProfiles.conf
 install -m755 "$HERE"/usr/local/bin/j606f-* /usr/local/bin/
 install -m755 "$HERE"/usr/local/bin/mic-test.sh /usr/local/bin/ 2>/dev/null || true
 install -m755 "$HERE"/usr/local/bin/sddm-x11-rotate.sh /usr/local/bin/
@@ -45,7 +47,7 @@ install -Dm644 "$HERE/etc/systemd/system/j606f-wifi-reprobe.service" /etc/system
 
 systemctl daemon-reload
 systemctl enable j606f-touch j606f-lid j606f-hid-resume j606f-usb-gadget j606f-wifi-reprobe upower bluetooth plasmalogin
-systemctl enable j606f-wifi-watchdog.timer
+systemctl enable j606f-wifi-watchdog.timer j606f-power-profiles
 # j606f-sensor-proxy ставится, но не включается: он требует карты sensor_pd
 # (adsps.jsn) и на этом устройстве ADSP уходит в handover-loop — включать
 # только осознанно, см. docs/sensors.md.
