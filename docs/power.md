@@ -140,3 +140,20 @@ Check with `zramctl` (`/dev/zram0` ~1.8 GiB) and `swapon --show`.
 - This kernel occasionally raises `Internal error: Oops - CFI` in `power_supply_changed_work`
   (battery/charger, `qcom_pmi632_charger`/`mm8013`). The system usually survives but can wedge; a reboot
   clears it. It is unrelated to audio or cameras.
+
+## USB PD / fast charging: what the experiment showed
+
+Enabling PD in the DT (`pd-disable` removed, `sink-pdos` 5 V/3 A + 9 V/2 A, `op-sink-microwatt`
+18 W, plus `source-pdos` 5 V/1.5 A because the port is `power-role = "dual"` and tcpm requires it)
+does negotiate: `tcpm-source-psy` reports `voltage_now = 9000000`, `current_now = 2000000` with a 65 W
+PD charger. **But the tablet does not charge in that state**: `pmi632-charger` shows
+`input_current_limit = 0` and `status = Not charging`, the battery keeps discharging, and the desktop
+says "discharging" even though the cable is in.
+
+The reason is the charger driver, not the DT: `drivers/power/supply/qcom_pmi632_charger.c` is
+read-only (no `set_property`, no register writes), so nothing configures the SMB5 HVDCP path when VBUS
+goes to 9 V and the input stays closed. Fast charging therefore needs the driver work (ICL/FCC/HVDCP
+register programming from the CAF SMB5 map) *before* PD is enabled in the DT — enabling PD alone only
+breaks charging.
+
+Rolled back to the image without PD; charging returns to `DCP`, `ICL = 1.5 A` at 5 V (≈7.5 W input).
