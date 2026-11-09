@@ -261,3 +261,21 @@ Next steps (in order): restore `j606f-wifi-reprobe`; run the capture **non-block
 kernel survives the attempt; read the instrumented `wcd937x_sdw_hw_params()` `dev_info` to see whether the
 codec is configured at all and with which ports/channels; then look at the AFE/q6asm side that is supposed to
 produce the TX buffers.
+
+### Experiment: which CDC-DMA backend the built-in mic uses
+
+Two DT variants were tested on hardware:
+
+- `cpu { sound-dai = <&q6afedai VA_CODEC_DMA_TX_0> }` (as the stock mixer suggests for the VA path):
+  both SoundWire slaves read `Attached`, capture opens without `EINVAL`/`EBUSY`, but the first
+  `arecord` **hangs the task in `D`** and the open PCM stays `OPEN` with a dead owner; afterwards the
+  codec can fail to re-initialise (`wcd9370-codec ... Initialization not complete`, `ASoC error (-110)`)
+  and the card disappears until a power cycle.
+- `cpu { sound-dai = <&q6afedai TX_CODEC_DMA_TX_3> }` (the reference qcm6490-idp backend, unique DAI —
+  `TX_CODEC_DMA_TX_4` already belongs to the headset-mic link, and using it twice makes the card fail to
+  register and the device fall into fastboot): the TX SoundWire slave stays in **`Alert`**.
+
+So the VA backend gets the bus further (attached, stream opens) at the cost of a kernel-side hang, while the
+TX-macro backend does not even attach. Next diagnostic that does not need a live console: let the capture
+wedge, power-cycle, then read `journalctl -k -b -1 | tail -60` — journald persists kernel messages to disk,
+so the last lines before the hang (including the instrumented `hw_params` `dev_info`) survive.
