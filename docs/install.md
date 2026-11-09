@@ -175,3 +175,11 @@ image; the next power-supply event calls it and CFI kills the kernel. Patch
 workqueue and frees the container in deinit. Verify after a module reload:
 `dmesg | grep -cE "CFI failure|Oops"` must be 0 and `/proc/bus/input/devices` must still show a
 `himax-touchscreen`.
+
+## `Handover signaled, but it already happened` flood
+
+The vendor `adsp.mbn` re-asserts the SMP2P `handover` item after the first handover (~2 per second on
+this device), and `q6v5_handover_interrupt()` logged every one of them at error level. It is harmless —
+audio, Wi-Fi and charging keep working — but it fills `dmesg` in minutes and hides real errors, and the
+rate-limited variant did not take effect on this kernel. Patch
+`kernel/patches/0009-remoteproc-quiet-handover-warning.patch` moves it to `dev_dbg`.

@@ -190,3 +190,11 @@ Internal error: Oops - CFI
 workqueue и освобождает контейнер в deinit. Проверка после перезагрузки модуля:
 `dmesg | grep -cE "CFI failure|Oops"` должен дать 0, а в `/proc/bus/input/devices` остаётся
 `himax-touchscreen`.
+
+## Поток `Handover signaled, but it already happened`
+
+Вендорский `adsp.mbn` повторно выставляет SMP2P-элемент `handover` после первого handover (~2 раза в
+секунду на этом устройстве), и `q6v5_handover_interrupt()` писал на каждое срабатывание сообщение
+уровня error. Вреда нет — звук, Wi-Fi и зарядка работают, — но `dmesg` заполняется за минуты и прячет
+настоящие ошибки; вариант с `dev_err_ratelimited` на этом ядре не сработал. Патч
+`kernel/patches/0009-remoteproc-quiet-handover-warning.patch` переводит сообщение в `dev_dbg`.
