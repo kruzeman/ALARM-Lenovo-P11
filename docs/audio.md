@@ -333,3 +333,16 @@ powering down silently (mic bias / ADC bias not held by DAPM) and the SWR master
 (`qcom_swrm_irq_handler: SWR read FIFO underflow fifo status 0x3` right at the stall). Instrument the codec's
 `dapm_widget_event` for `ADC2`/`TX SWR` widgets and the qcom master's read-FIFO path, and try a capture with
 `MIC BIAS2` forced on via a `snd_soc_dapm_force_enable_pin()` patch.
+
+**Update after instrumentation (delayed register read).** A 3-second-delayed read added to
+`sdw_enable_disable_slave_ports()` settles where the codec stands during the silence: `chn_en B0 = 0x1`
+immediately after the write **and 3 s later**, `portctl = 0x0`, `dp0_int = 0x0`, and the codec's analog bias
+registers do not move either (`0x3023` MICB2 stays `0x10`, `0x3022` MICB1 stays `0x50`, `0x3001` `0x80`). So the
+codec's TX port is still enabled and healthy, its mic bias is still up, and no interrupt is pending — yet the
+samples are zeros. That rules out "the codec disabled its port" and leaves the analog ADC output or the
+macro's CDC-DMA read path.
+
+**Methodology warning learned the hard way:** do not toggle FE mixer routes (or anything else) *while a stream is
+open* on this platform. It leaves the ADM matrix on the ADSP in a state where `q6adm … Failed to close copp -22`
+and `q6asm_dai_prepare: stream reg failed ret:-22` appear, after which **playback goes silent too** and only a
+reboot clears it. One experiment per boot, with the stream closed before any mixer change.
