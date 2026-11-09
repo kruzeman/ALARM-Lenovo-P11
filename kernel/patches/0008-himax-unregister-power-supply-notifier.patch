@@ -1,0 +1,52 @@
+From: Maksim Kruzeman <kruzeman@users.noreply.github.com>
+Subject: [PATCH] Input: himax_hx83102e: unregister the power-supply notifier on deinit
+
+himax_chip_common_init() registers a power_supply notifier when
+HX_USB_DETECT_GLOBAL is set (it is, see himax_common.h), but
+himax_chip_common_deinit() never unregisters it. After the module is
+reloaded - which this port does at boot to win the TDDI probe race - the
+notifier block stays in the global power_supply chain pointing into the
+freed module image. The next power-supply event calls that dangling
+pointer, CFI catches the signature mismatch and the kernel dies:
+
+  CFI failure at notifier_call_chain+0x98/0x1d8
+    (target: himax_GESTURE_write+0x124/0x1e8 [himax_hx83102e])
+  Internal error: Oops - CFI
+
+On the tablet this shows as "the screen stops reacting and the device
+hangs until a power cycle", sshd still accepting TCP but never sending a
+banner.
+
+Unregister the notifier, destroy its workqueue and free the container in
+deinit, mirroring the probe error path. Apply after the input-unregister
+patch: the context includes lines it adds.
+
+diff --git a/drivers/input/touchscreen/himax_hx83102e/himax_common.c b/drivers/input/touchscreen/himax_hx83102e/himax_common.c
+index 6afade7..e9e1dd2 100644
+--- a/drivers/input/touchscreen/himax_hx83102e/himax_common.c
++++ b/drivers/input/touchscreen/himax_hx83102e/himax_common.c
+@@ -3408,6 +3408,24 @@ void himax_chip_common_deinit(void)
+ 			input_free_device(ts->hx_pen_dev);
+ 		ts->hx_pen_dev = NULL;
+ 	}
++#if defined(HX_USB_DETECT_GLOBAL)
++	/*
++	 * Симметрия с probe: без этой отписки power_supply-notifier остаётся
++	 * в глобальной цепочке и указывает в выгруженный модуль. Любое событие
++	 * питания (воткнули/вынули зарядку) зовёт мёртвый указатель, CFI ловит
++	 * несовпадение сигнатуры и ядро падает в Oops — на практике это
++	 * "CFI failure at notifier_call_chain ... target: himax_GESTURE_write"
++	 * и зависание планшета сразу после перезагрузки модуля тачскрина.
++	 */
++	if (ts->charger_detection) {
++		if (ts->charger_detection->charger_notif.notifier_call)
++			power_supply_unreg_notifier(&ts->charger_detection->charger_notif);
++		if (ts->charger_detection->himax_charger_notify_wq)
++			destroy_workqueue(ts->charger_detection->himax_charger_notify_wq);
++		kfree(ts->charger_detection);
++		ts->charger_detection = NULL;
++	}
++#endif
+ #if defined(HX_CONTAINER_SPEED_UP)
+ 	cancel_delayed_work_sync(&ts->ts_int_work);
+ 	destroy_workqueue(ts->ts_int_workqueue);

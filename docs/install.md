@@ -153,3 +153,25 @@ entirely and does not come back by itself. `j606f-wifi-reprobe` only covers boot
 `j606f-wifi-watchdog.timer` runs `j606f-wifi-watchdog.sh` every minute: if a wireless interface exists it
 just brings a `down` link up, and if there is none it stops NetworkManager, re-probes the driver
 (three reload attempts), and starts NetworkManager again.
+
+## Hang: `CFI failure at notifier_call_chain`
+
+Symptom: the tablet freezes at some point after boot (often right after the login), the screen stops
+reacting, `sshd` still accepts TCP but never sends a banner, and only a power cycle recovers it. In the
+journal of that boot:
+
+```
+CFI failure at notifier_call_chain+0x98/0x1d8
+  (target: himax_GESTURE_write+0x124/0x1e8 [himax_hx83102e]; expected type: 0xd5127a3b)
+Internal error: Oops - CFI
+```
+
+The cause is in the port's touchscreen driver, not in whatever subsystem was being tested:
+`himax_chip_common_init()` registers a `power_supply` notifier when `HX_USB_DETECT_GLOBAL` is set, and
+`himax_chip_common_deinit()` never unregisters it. The port reloads the module at boot (`j606f-touch`, to
+win the TDDI probe race), so the old notifier stays in the global chain pointing into the freed module
+image; the next power-supply event calls it and CFI kills the kernel. Patch
+`kernel/patches/0008-himax-unregister-power-supply-notifier.patch` unregisters the notifier, destroys its
+workqueue and frees the container in deinit. Verify after a module reload:
+`dmesg | grep -cE "CFI failure|Oops"` must be 0 and `/proc/bus/input/devices` must still show a
+`himax-touchscreen`.

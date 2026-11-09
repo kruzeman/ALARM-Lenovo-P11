@@ -168,3 +168,25 @@ Lenovo Keyboard Pack поднимает два независимых клиен
 `j606f-wifi-watchdog.timer` раз в минуту запускает `j606f-wifi-watchdog.sh`: если беспроводной интерфейс
 есть — поднимает лежащий `down` линк, если интерфейса нет — останавливает NetworkManager, перепривязывает
 драйвер (три попытки) и запускает NetworkManager обратно.
+
+## Зависание: `CFI failure at notifier_call_chain`
+
+Симптом: планшет замирает через некоторое время после загрузки (часто сразу после входа), экран не
+реагирует, `sshd` принимает TCP, но баннер не отдаёт, помогает только сброс питания. В журнале той
+загрузки:
+
+```
+CFI failure at notifier_call_chain+0x98/0x1d8
+  (target: himax_GESTURE_write+0x124/0x1e8 [himax_hx83102e]; expected type: 0xd5127a3b)
+Internal error: Oops - CFI
+```
+
+Причина — в драйвере тачскрина порта, а не в той подсистеме, которую в этот момент тестировали:
+`himax_chip_common_init()` регистрирует `power_supply`-notifier при включённом `HX_USB_DETECT_GLOBAL`, а
+`himax_chip_common_deinit()` его не отписывает. Порт перезагружает модуль при загрузке (`j606f-touch`,
+чтобы выиграть гонку пробе TDDI), поэтому старый notifier остаётся в глобальной цепочке и указывает в
+освобождённую память модуля; первое событие питания вызывает его — и CFI роняет ядро. Патч
+`kernel/patches/0008-himax-unregister-power-supply-notifier.patch` отписывает notifier, уничтожает его
+workqueue и освобождает контейнер в deinit. Проверка после перезагрузки модуля:
+`dmesg | grep -cE "CFI failure|Oops"` должен дать 0, а в `/proc/bus/input/devices` остаётся
+`himax-touchscreen`.
