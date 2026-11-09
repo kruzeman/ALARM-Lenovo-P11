@@ -1,0 +1,23 @@
+From: Maksim Kruzeman <kruzeman@users.noreply.github.com>
+Subject: [PATCH] arm64: dts: qcom: sm6115p-lenovo-j606f: give the pogo touchpad 400 ms
+
+The dock MCU needs longer than 100 ms before it can answer the HID report
+descriptor request: with 100 ms hid-over-i2c reads garbage, hid-multitouch
+fails to probe with -E22 ("unknown main item tag 0x0", "collection stack
+underflow", "item 0 0 0 12 parsing failed") and no input device appears for
+the Elan 04f3:3164 touchpad. The keyboard on i2c1 0x61 does not need it.
+
+Measured on the hardware: 400 ms makes the touchpad probe and work.
+diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
+index de6ab73aa..0504ecd91 100644
+--- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
+@@ -58,7 +58,7 @@ touchpad@60 {
+ 		compatible = "hid-over-i2c";
+ 		reg = <0x60>;
+ 		hid-descr-addr = <0x1>;
+-		post-power-on-delay-ms = <100>;
++		post-power-on-delay-ms = <400>;
+ 		interrupts-extended = <&tlmm 93 IRQ_TYPE_LEVEL_LOW>;
+ 		pinctrl-0 = <&pogo_touchpad_int_default>;
+ 		pinctrl-names = "default";

@@ -149,3 +149,22 @@ systemctl enable plasmalogin      # перевесит симлинк display-ma
 `kwin_wayland` работает, поворот и автояркость на месте, Wi-Fi ассоциировался. Старые файлы SDDM
 (`rootfs/etc/sddm.conf.d/20-x11.conf` и `rootfs/usr/local/bin/sddm-x11-rotate.sh`) оставлены только как путь
 назад; им нужен пакет `xorg-xrandr`.
+
+## Пого-док: клавиатура и тачпад
+
+Lenovo Keyboard Pack поднимает два независимых клиента HID-over-I2C: клавиатуру на `i2c1` 0x61
+(`17EF:6103`) и тачпад Elan на `i2c0` 0x60 (`04F3:3164`, им занимается `hid-multitouch`). Клавиатуре хватает
+`post-power-on-delay-ms = <100>`, а тачпаду нет: при 100 мс ядро читает битый дескриптор отчётов
+(`unknown main item tag 0x0`, `collection stack underflow`, `item 0 0 0 12 parsing failed`,
+`probe with driver hid-multitouch failed with error -22`), устройство ввода не появляется, а MCU после
+этого засыпает, и последующий unbind/bind отвечает `GPI transfer failed: -5`. 400 мс в узле `touchpad@60`
+достаточно — тачпад работает. Если он снова замолчит: передёрнуть док и перезагрузиться, дескриптор
+читается один раз, при пробе.
+
+## Сторож Wi-Fi
+
+`ath10k_snoc` (WCN3990) умеет терять `wlan0` не только при загрузке, но и в работе: интерфейс исчезает
+целиком и сам не возвращается. `j606f-wifi-reprobe` закрывает только загрузку, поэтому
+`j606f-wifi-watchdog.timer` раз в минуту запускает `j606f-wifi-watchdog.sh`: если беспроводной интерфейс
+есть — поднимает лежащий `down` линк, если интерфейса нет — останавливает NetworkManager, перепривязывает
+драйвер (три попытки) и запускает NetworkManager обратно.

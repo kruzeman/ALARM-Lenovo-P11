@@ -1,0 +1,6 @@
+[Unit]
+Description=Keep WCN3990 Wi-Fi alive (re-probe ath10k_snoc when wlan0 disappears)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/j606f-wifi-watchdog.sh

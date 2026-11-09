@@ -63,6 +63,10 @@ light (`kscreen-doctor output.DSI-1.brightness.NN`) and KWin stores points in
 `~/.config/kwinoutputconfig.json` (`autoBrightnessCurve`). After that it interpolates on its own
 (measured: 108 lux -> 80%, covered sensor at 0.37 lux -> 40%, both animated).
 
+The bridge is installed but **not enabled** by default: on this device the sensor PD map (`adsps.jsn`) makes the
+ADSP fall into `Handover signaled, but it already happened` once per second, which eventually takes Wi-Fi, audio
+and the whole userspace down.
+
 `iio-sensor-proxy` must stay **masked** (`systemctl mask iio-sensor-proxy`): plain `disable` is not
 enough, because KWin activates it over D-Bus, it grabs `net.hadess.SensorProxy` first and then
 delivers nothing.

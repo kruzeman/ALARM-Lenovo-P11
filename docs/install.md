@@ -134,3 +134,22 @@ Verified after a reboot: `plasmalogin` active, `sddm` inactive, the user session
 running with rotation and auto-brightness intact, Wi-Fi associated. The old SDDM pieces
 (`rootfs/etc/sddm.conf.d/20-x11.conf` and `rootfs/usr/local/bin/sddm-x11-rotate.sh`) are kept only as the way
 back: `xorg-xrandr` is the package they need.
+
+## Pogo dock: keyboard and touchpad
+
+The Lenovo Keyboard Pack exposes two independent HID-over-I2C clients: the keyboard at `i2c1` 0x61
+(`17EF:6103`) and the Elan touchpad at `i2c0` 0x60 (`04F3:3164`, handled by `hid-multitouch`). The
+keyboard comes up with `post-power-on-delay-ms = <100>`, but the touchpad needs longer: with 100 ms the
+kernel reads a corrupt report descriptor (`unknown main item tag 0x0`, `collection stack underflow`,
+`item 0 0 0 12 parsing failed`, `probe with driver hid-multitouch failed with error -22`), no input device
+appears, and the MCU then idles so a later unbind/bind answers `GPI transfer failed: -5`. 400 ms in the
+`touchpad@60` node is enough and the touchpad works. If the touchpad ever goes silent, reseat the dock and
+reboot — the descriptor is read once, at probe.
+
+## Wi-Fi watchdog
+
+`ath10k_snoc` (WCN3990) can lose `wlan0` not only at boot but during a session: the interface disappears
+entirely and does not come back by itself. `j606f-wifi-reprobe` only covers boot, so
+`j606f-wifi-watchdog.timer` runs `j606f-wifi-watchdog.sh` every minute: if a wireless interface exists it
+just brings a `down` link up, and if there is none it stops NetworkManager, re-probes the driver
+(three reload attempts), and starts NetworkManager again.

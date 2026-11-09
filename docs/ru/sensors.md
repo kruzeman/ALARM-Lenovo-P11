@@ -63,6 +63,10 @@ export XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-1 \
 `~/.config/kwinoutputconfig.json` (`autoBrightnessCurve`) и дальше интерполирует сам (измерено:
 108 люкс -> 80%, закрытый датчик 0.37 люкс -> 40%, с анимацией).
 
+Мост ставится, но **по умолчанию не включается**: на этом устройстве карта `sensor_pd` (`adsps.jsn`) приводит к
+тому, что ADSP уходит в `Handover signaled, but it already happened` раз в секунду — и через некоторое время
+уносит Wi-Fi, звук и весь userspace.
+
 `iio-sensor-proxy` должен быть **замаскирован** (`systemctl mask iio-sensor-proxy`): простого
 `disable` мало — KWin поднимает его по D-Bus-активации, он первым занимает
 `net.hadess.SensorProxy` и ничего не отдаёт.
