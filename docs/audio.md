@@ -309,9 +309,27 @@ and an `EnableSequence` that sets `MultiMedia2 Mixer TX_CODEC_DMA_TX_3`, `ADC2 M
 after boot, and `pw-record --rate 48000 --channels 1 --format s16` returns live signal (measured: peak 32768
 with occasional transients, RMS ~3.8k for room noise at unity gain).
 
-**Known limitation.** Only the first capture after a boot (or after reloading the sound modules) delivers
-audio; every following capture returns silence. `hw_free` runs and `sdw_disable_stream()` /
-`sdw_deprepare_stream()` both return 0, `hw_params` is re-applied with the same port/channel config, and no
-error is logged — the codec simply stops putting data on the bus after the first stream is torn down, i.e. the
-SoundWire slave's TX port is not re-armed. Toggling the FE route or the TX-macro muxes between captures does
-not help. This needs a separate look at the slave port enable/bank-switch path on stream restart.
+**Known limitation: only the first capture after a boot delivers audio.** Everything measured so far, so the
+next person does not repeat it:
+
+- Within a single stream: about 0.5 s of real audio, then exact zeros for the rest of the capture. So the
+  codec stops transmitting shortly after the stream starts, it is not "no data from the first period".
+- `dmesg` during the failure: `qcom-soundwire a740000.soundwire: qcom_swrm_irq_handler: SWR read FIFO
+  underflow fifo status 0x3` — the master's read FIFO is empty, i.e. the slave is not putting data on the bus.
+- The TX slave's state: `Attached` on a fresh boot, `Alert` from the first teardown onwards. Note that a stream
+  can still deliver audio while the slave already reads `Alert`, so `Alert` alone is not the switch.
+- Register dumps taken **during** the stream (working vs silent) are identical for all three sides:
+  `sdw:3:…-wcd937x_csr` (codec), `a620000.codec-tx_macro` (TX macro) and
+  `master-3-0/qualcomm-sdw/qualcomm-registers` (bus master). Dumped after the stream they are identical too,
+  which is expected — DAPM powers everything down.
+- Ruled out as fixes: re-applying the FE route (`MultiMedia2 Mixer TX_CODEC_DMA_TX_3` 0→1, including while the
+  stream is open), toggling the TX-macro muxes between captures, keeping the SoundWire stream enabled by
+  skipping `sdw_disable_stream()`/`sdw_deprepare_stream()` in `qcom_snd_sdw_hw_free()`, and re-probing the
+  codec/machine modules (`modprobe -r snd_soc_sm8250 … ; modprobe …`) — the slave stays `Alert` and the second
+  capture stays silent. Spacing the captures out is not a rule either: back-to-back and 6-second-apart runs both
+  succeed and fail at random.
+
+Next step: instrument the SoundWire core's slave-port programming (`sdw_prep_deprep_slave_ports()`,
+`sdw_enable_ports()`) and the codec's `wcd9370_interrupt_callback()` — the working hypothesis is that the codec
+raises an alert that nobody acknowledges when the bus is torn down, after which its TX port stops feeding the
+FIFO, and the bank/port enable written on the next stream lands in a bank the codec no longer watches.
