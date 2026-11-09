@@ -346,3 +346,29 @@ macro's CDC-DMA read path.
 open* on this platform. It leaves the ADM matrix on the ADSP in a state where `q6adm … Failed to close copp -22`
 and `q6asm_dai_prepare: stream reg failed ret:-22` appear, after which **playback goes silent too** and only a
 reboot clears it. One experiment per boot, with the stream closed before any mixer change.
+
+### Vendor-vs-mainline comparison of the capture path (result)
+
+Comparing `techpack/audio/asoc/codecs/wcd937x/wcd937x.c` from the vendor kernel with mainline
+`sound/soc/codecs/wcd937x.c` settles where the bug is *not*:
+
+- The DAPM widget sets are identical (66 vs 67 names, mainline has one extra `WCD_TX_OUTPUT`).
+- `wcd937x_codec_enable_adc()` and `wcd937x_enable_req()` write the same registers in the same order
+  (`CDC_DIG_CLK_CTL`, `CDC_ANA_CLK_CTL`, `CDC_REQ_CTL`, `ANA_TX_CH1/CH2/CH3`, `ANA_TX_CH3_HPF`); the diffs are
+  style only (`BIT(n)` vs `0x..`, atomic vs mutex on `ana_clk_count`).
+- Mic bias handling, the ADC power levels (`TX CH1/CH3 PWR`, a vendor-only kcontrol writing bits 6:5 of
+  `WCD937X_ANA_TX_CH1/CH3`, default L1) and the BCS/headset-mic special case are all present in mainline or
+  irrelevant here (registers `0x3022`/`0x3023`/`0x3001` do not move during the stall).
+- The one structural difference: the vendor **re-connects the codec's SoundWire port on every ADC power-up**
+  (`wcd937x_tx_connect_port()` → `swr_connect_port()`), while mainline does the equivalent once per stream in
+  `wcd937x_sdw_hw_params()` → `sdw_stream_add_slave()`.
+
+So the codec driver is not the missing piece, and the next checks belong to the host side:
+
+1. Sample `clk_summary` for `LPASS_HW_DCODEC_VOTE` (the codec's analog clock vote) and the macro's SWR clock
+   bits during the silent phase — the ADC needs the SWR clock to convert, and a stopped SWR clock would explain
+   zeros with *no* register change on either side, plus the master's `SWR read FIFO underflow`.
+2. Read the TX macro's `CDC_TX_TOP_CSR_*` registers (SWR clock select / DEC clock enable) twice inside one
+   stream, the same early-vs-late trick that already worked for the slave.
+3. If the SWR clock turns out to be the trigger, the fix belongs in `lpass-tx-macro` (hold the SWR clock while a
+   capture stream is active) rather than in the codec or the machine driver.
