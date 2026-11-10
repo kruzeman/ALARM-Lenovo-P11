@@ -9,13 +9,24 @@ What works:
 - Writing `host` to `/sys/class/usb_role/4e00000.usb-role-switch/role` does bring up xHCI:
   `usb1`/`usb2` root hubs appear, `ls /sys/bus/usb/devices/` shows the two buses.
 
-What does not work:
-- **VBUS never turns on.** GPIO 38, which enables the external 5 V boost (`usb_otg_vbus`, the stock "dock_pogo
-  usb_vbus" line), stays `out low`, so the adapter gets no power and nothing enumerates. Plugging a device produces
-  no dmesg lines at all: TCPM does not report a connection, and per the reference patch TCPM is what enables the
-  regulator — only after it sees Rd on CC.
-- `power_role` is already `source` in `/sys/class/typec/port0`, writing it returns `EIO`, and `i2cget` on `0x22`
-  fails with `Device or resource busy` (the driver owns it), so userspace cannot force VBUS.
+**Host mode works (confirmed 2026-11-10).** Plugging a device in — no manual role switching — makes TCPM detect it,
+switch the port to host and enable VBUS: GPIO 38 goes `out high`, xHCI enumerates the device and the adapter shows up
+under `/sys/bus/usb/devices/`:
+
+```
+usb 1-1: new high-speed USB device number 2 using xhci-hcd
+usb 1-1: New USB device found, idVendor=0bda, idProduct=8179
+usb 1-1: Product: 802.11n NIC
+```
+
+`/sys/class/usb_role/*/role` reads `host`, `GPIO38` reads `out high`. What is still missing for that particular
+adapter is only the driver: `rtl8xxxu` is not built in this kernel (`CONFIG_RTL8XXXU` unset), so no `wlan1` appears.
+Build it as a module if the adapter is needed; nothing else is required.
+
+Notes from the failed attempts (do not repeat):
+- Forcing `role=host` by hand brings up xHCI but leaves VBUS off until a device is actually plugged — TCPM owns the
+  regulator. `power_role` is already `source`; writing it returns `EIO`; `i2cget` on `0x22` fails with
+  `Device or resource busy` because the driver owns the chip.
 
 Dead end (do not repeat): adding `vbus-supply = <&usb_otg_vbus>;` to `&usb_dwc3`. The DTB difference is that single
 property (16 bytes, verified by decompiling both DTBs), and the tablet then hangs on the Lenovo logo — the USB
