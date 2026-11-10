@@ -415,3 +415,6 @@ The UCM `Mic` device now enables `ADC1 Switch`, `ADC1_MIXER Switch`, `ADC1 REQ S
 *device* is created, so after editing the file the node has to be recreated (reboot, or stop WirePlumber and let the
 card be re-probed) — restarting WirePlumber alone leaves an already-created node with the old values, which is how
 one test run measured `TX SMIC MUX0 = 9` and recorded silence.
+
+**Confirmed by the operator** on 2026-11-10: a recording made through PipeWire's default source was played back to
+him and he confirmed his voice is audible and clear (RMS moving 19 -> 3600 with speech, peak ~8.2k).
