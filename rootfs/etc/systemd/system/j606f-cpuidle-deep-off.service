@@ -1,0 +1,12 @@
+[Unit]
+Description=Disable deep CPU idle states (s2idle hard lockup on TB-J606F)
+After=multi-user.target
+ConditionPathExists=/sys/devices/system/cpu/cpu0/cpuidle/state1/disable
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/j606f-cpuidle-deep-off.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

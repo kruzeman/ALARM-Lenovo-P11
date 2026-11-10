@@ -24,7 +24,7 @@ fixes, a libcamera patch for the cameras, a minimal initramfs and the Arch-side 
 | USB-C / headset | ⚠️ | WCD937x + SoundWire come up, but the analogue path goes through an FSA4480 switch — not implemented |
 | Cameras (OV13B10 + S5K4H7) | ⚠️ | both capture; front orientation fixed in DT, rear has no autofocus |
 | Built-in microphones (WCD9370, SoundWire) | ✅ | mono from `ADC1`/`AMIC1` through the TX macro (`TX SMIC MUX0 = SWR_MIC0`, `TX_DEC0` +28 dB); the second (right) mic needs a SoC DMIC link, see `docs/audio.md` |
-| Suspend (`s2idle`) | ✅ | wake with Power; lid-close suspend via `j606f-lid` (Hall sensor, gpiochip0 line 36) |
+| Suspend (`s2idle`) | ✅ | wake with Power; lid-close suspend via `j606f-lid` (Hall sensor, gpiochip0 line 36); deep idle states are disabled by `j606f-cpuidle-deep-off`, otherwise resume locks the CPUs up |
 | Auto-rotate | ✅ | `j606f-autorotate` daemon on top of `ssccli` (SSC/ADSP) |
 | Login screen | ✅ | SDDM greeter on Xorg (rotate via `xrandr`), Plasma session on Wayland |
 | Ambient light | ✅ | LTR578 through SSC, `iio-sensor-proxy` reports `HasAmbientLight` |
