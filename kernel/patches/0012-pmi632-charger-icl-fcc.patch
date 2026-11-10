@@ -1,8 +1,24 @@
 diff --git a/drivers/power/supply/qcom_pmi632_charger.c b/drivers/power/supply/qcom_pmi632_charger.c
-index 9a0923d8f..d4ca01531 100644
+index 9a0923d8f..3c49a2330 100644
 --- a/drivers/power/supply/qcom_pmi632_charger.c
 +++ b/drivers/power/supply/qcom_pmi632_charger.c
-@@ -75,6 +75,7 @@ struct pmi632_chg {
+@@ -48,6 +48,15 @@
+ #define USBIN_INT_RT_STS		0x310
+ #define  USBIN_PLUGIN_RT_STS		BIT(4)
+ #define USBIN_ICL_CFG			0x370
++/* HVDCP (Quick Charge 2/3): auth-алгоритм + разрешение, и автономный режим,
++ * в котором чип сам ведёт адаптер по ступеням напряжения. */
++#define USBIN_OPTIONS_1_CFG		0x362
++#define  HVDCP_AUTH_ALG_EN		0x40
++#define  HVDCP_AUTONOMOUS_EN		0x20
++#define  HVDCP_EN			0x04
++#define USBIN_ADAPTER_ALLOW_CFG		0x360
++#define  USBIN_ADAPTER_ALLOW_MASK	0x0f
++#define  USBIN_ADAPTER_ALLOW_UP_TO_12V	0x07
+ 
+ /* PMI632 ranges (smb5_pmi632_params) */
+ #define PMI632_CURRENT_STEP_UA		50000
+@@ -75,6 +84,7 @@ struct pmi632_chg {
  	struct delayed_work poll_work;
  	unsigned int last_online;
  	unsigned int last_state;
@@ -10,7 +26,7 @@ index 9a0923d8f..d4ca01531 100644
  };
  
  static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
-@@ -82,6 +83,17 @@ static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
+@@ -82,6 +92,17 @@ static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
  	return regmap_read(chip->regmap, chip->base + reg, val);
  }
  
@@ -28,7 +44,7 @@ index 9a0923d8f..d4ca01531 100644
  static int pmi632_online(struct pmi632_chg *chip, int *online)
  {
  	unsigned int rt;
-@@ -217,6 +229,39 @@ static int pmi632_get_step(struct pmi632_chg *chip, u16 reg, int *val)
+@@ -217,6 +238,39 @@ static int pmi632_get_step(struct pmi632_chg *chip, u16 reg, int *val)
  	return 0;
  }
  
@@ -68,7 +84,7 @@ index 9a0923d8f..d4ca01531 100644
  static int pmi632_get_property(struct power_supply *psy,
  			       enum power_supply_property psp,
  			       union power_supply_propval *val)
-@@ -252,6 +297,82 @@ static int pmi632_get_property(struct power_supply *psy,
+@@ -252,6 +306,82 @@ static int pmi632_get_property(struct power_supply *psy,
  	}
  }
  
@@ -151,7 +167,7 @@ index 9a0923d8f..d4ca01531 100644
  static const enum power_supply_property pmi632_props[] = {
  	POWER_SUPPLY_PROP_ONLINE,
  	POWER_SUPPLY_PROP_STATUS,
-@@ -273,6 +394,8 @@ static const struct power_supply_desc pmi632_psy_desc = {
+@@ -273,6 +403,8 @@ static const struct power_supply_desc pmi632_psy_desc = {
  	.properties = pmi632_props,
  	.num_properties = ARRAY_SIZE(pmi632_props),
  	.get_property = pmi632_get_property,
@@ -160,7 +176,7 @@ index 9a0923d8f..d4ca01531 100644
  };
  
  /* No interrupts yet: poll and notify userspace when plug or charge state change */
-@@ -287,6 +410,30 @@ static void pmi632_poll(struct work_struct *work)
+@@ -287,6 +419,30 @@ static void pmi632_poll(struct work_struct *work)
  	rt &= USBIN_PLUGIN_RT_STS;
  	stat &= CHGR_STATUS_MASK;
  
@@ -191,9 +207,19 @@ index 9a0923d8f..d4ca01531 100644
  	if (rt != chip->last_online || stat != chip->last_state) {
  		chip->last_online = rt;
  		chip->last_state = stat;
-@@ -340,6 +487,8 @@ static int pmi632_probe(struct platform_device *pdev)
+@@ -339,7 +495,18 @@ static int pmi632_probe(struct platform_device *pdev)
+ 
  	cfg.drv_data = chip;
  	cfg.fwnode = dev_fwnode(dev);
++	/* Quick Charge: этот планшет поддерживает QC 3.0 (PMI632 умеет HVDCP).
++	 * Без этих битов вход остаётся зажатым на малом токе. */
++	pmi632_masked_write(chip, USBIN_OPTIONS_1_CFG,
++			    HVDCP_AUTH_ALG_EN | HVDCP_AUTONOMOUS_EN | HVDCP_EN,
++			    HVDCP_AUTH_ALG_EN | HVDCP_AUTONOMOUS_EN | HVDCP_EN);
++	pmi632_masked_write(chip, USBIN_ADAPTER_ALLOW_CFG,
++			    USBIN_ADAPTER_ALLOW_MASK,
++			    USBIN_ADAPTER_ALLOW_UP_TO_12V);
++
  	chip->psy = devm_power_supply_register(dev, &pmi632_psy_desc, &cfg);
 +	if (!IS_ERR(chip->psy))
 +		device_create_file(&chip->psy->dev, &dev_attr_reg);

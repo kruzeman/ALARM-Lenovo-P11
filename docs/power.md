@@ -258,3 +258,28 @@ try those writes live without rebuilding.
 Also note: with the tablet plugged into a **PC** port the chip reports `APSD_SDP` and the driver correctly limits the
 input to 500 mA; measured charge from a laptop port is ~0.7 A. The 3 A setting applies to DCP/CDP and to an
 undetermined source.
+
+### HVDCP enabled in the driver: charging is now ~2.1-2.6 A
+
+With the Xiaomi MDY-15-ET (Quick Charge 3.0, 67 W) plugged in, the chip reports `0x308 = 0x28` (APSD_DCP +
+`QC_2P0`), no OV, and after enabling HVDCP the battery takes **2.1-2.6 A** instead of ~0.7-1.2 A:
+
+```
+21:20:17 ICL=2350000 батарея=2136000 Charging
+0x308 = 0x28   0x310 = 0x10   0x362 = 0x6c
+```
+
+The driver now sets, at probe:
+
+- `USBIN_OPTIONS_1` (`0x362`) bits `HVDCP_AUTH_ALG_EN` (6) | `HVDCP_AUTONOMOUS_EN` (5) | `HVDCP_EN` (2) — the same
+  set CAF's `smblib_hvdcp_detect_enable()` / `smblib_hvdcp_hw_inov_enable()` write, which is what opens the input
+  beyond the "SDP-like" 500 mA path;
+- `USBIN_ADAPTER_ALLOW` (`0x360`) = `5V_OR_9V_TO_12V`.
+
+Measured: effective input limit 2.35 A at 5 V (~11.7 W), battery 2.1-2.6 A (~9-11 W into the cells). That is roughly
+double the previous best.
+
+9 V still does not engage with this adapter: writing `CMD_HVDCP_2` (`0x343`) = `FORCE_9V` is accepted and the chip
+clears the register after sending the pulse train, but the adapter stays at 5 V (`0x310 = 0x10`, no change in current).
+Since we are already at the chip's AICL ceiling (2.35 A) and the battery is in its taper region, 9 V would add little;
+if more is needed the next lever is the continuous AICL threshold, not the voltage.
