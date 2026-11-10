@@ -157,3 +157,29 @@ register programming from the CAF SMB5 map) *before* PD is enabled in the DT —
 breaks charging.
 
 Rolled back to the image without PD; charging returns to `DCP`, `ICL = 1.5 A` at 5 V (≈7.5 W input).
+
+### Charging: the driver can now set the input limit (2026-11-10)
+
+Up to now `qcom_pmi632_charger` was read-only, which is why enabling PD left `ICL = 0` and nothing charged. It now has
+`set_property` + `property_is_writeable` for `INPUT_CURRENT_LIMIT` (register `USBIN_ICL_CFG 0x370`) and
+`CONSTANT_CHARGE_CURRENT` (`CHGR_FCC_CFG 0x061`), 50 mA per step, plus automatic configuration in the poll work:
+on plug-in it reads the APSD result and opens the input to 3 A for DCP/CDP, 500 mA for SDP.
+
+Measured on the IdeaPad 3 65 W USB-C adapter, battery at 80 %:
+
+| state | effective ICL (`0x107`) | current into the battery |
+|---|---|---|
+| before (read-only driver) | 950 mA | +0.69 A with a game running |
+| after, game running | 2.5 A | +0.69 A |
+| after, load stopped | 2.35 A | +1.2…1.3 A |
+
+`dmesg` shows the write landing: `set 0x370: want 3000000 uA -> step 60, readback 60, effective 53` — the config
+register takes 3 A, AICL then settles around 2.35–2.65 A. So at 5 V the port now pulls ~12 W instead of ~5 W.
+
+### 9 V (PD) — prepared, not yet tested
+
+`boot-pd.img` (DTB 92 364 bytes, sha256 starts `743e75b3`) enables PD in the connector: `pd-disable` removed,
+`sink-pdos` 5 V/3 A + 9 V/2 A, `op-sink-microwatt` 18 W, `source-pdos` 5 V/1.5 A (required because `power-role` is
+`dual`, otherwise tcpm returns `-EINVAL`). Not flashed yet; the module with the ICL setters is already installed on the
+tablet, so the open question is whether a 9 V contract now charges at all — previously the port closed the input
+because nobody could program `ICL`. Rollback: `boot-txmac2.img` (release v0.2).

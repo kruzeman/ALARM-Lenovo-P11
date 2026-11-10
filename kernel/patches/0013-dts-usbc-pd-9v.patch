@@ -1,0 +1,50 @@
+diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
+index de6ab73aa..fcc01f623 100644
+--- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
+@@ -6,6 +6,7 @@
+  * TB-J606F_S120184_210520_ROW (see notes/stock_dt/).
+  */
+ 
++#include <dt-bindings/usb/pd.h>
+ #include "pmi632.dtsi"
+ /* Lenovo ABL applies the stock dtbo unconditionally unless dtbo is erased, see the dtsi */
+ #include "sm6115p-lenovo-j606f-abl-sink.dtsi"
+@@ -58,7 +59,7 @@ touchpad@60 {
+ 		compatible = "hid-over-i2c";
+ 		reg = <0x60>;
+ 		hid-descr-addr = <0x1>;
+-		post-power-on-delay-ms = <100>;
++		post-power-on-delay-ms = <400>;
+ 		interrupts-extended = <&tlmm 93 IRQ_TYPE_LEVEL_LOW>;
+ 		pinctrl-0 = <&pogo_touchpad_int_default>;
+ 		pinctrl-names = "default";
+@@ -202,6 +203,12 @@ &uart3 {
+ 
+ 	bluetooth {
+ 		compatible = "qcom,wcn3990-bt";
++		/* The WCN3990 firmware carries no BD address, and the QCA driver
++		 * marks it BDADDR_PROPERTY_BROKEN: the kernel byte-swaps this
++		 * property, so these bytes read back as 02:00:00:00:60:6f
++		 * (locally administered, stable across boots).
++		 */
++		local-bd-address = [6f 60 00 00 00 02];
+ 		/* stock bt_wcn3990: io = L9, core = L17, pa = L23, xtal = L16 */
+ 		vddio-supply = <&pm6125_l9>;
+ 		vddxo-supply = <&pm6125_l16>;
+@@ -381,7 +388,14 @@ connector {
+ 			self-powered;
+ 
+ 			typec-power-opmode = "default";
+-			pd-disable;
++
++			/* PD включён: 5 В/3 А и 9 В/2 А как sink, 5 В/1.5 А как source
++			 * (power-role = "dual" требует source-pdos, иначе tcpm -EINVAL). */
++			sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)
++				     PDO_FIXED(9000, 2000, PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)>;
++			op-sink-microwatt = <18000000>;
++			source-pdos = <PDO_FIXED(5000, 1500, PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)>;
++			op-src-microwatt = <7500000>;
+ 
+ 			ports {
+ 				#address-cells = <1>;
