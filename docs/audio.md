@@ -372,3 +372,24 @@ So the codec driver is not the missing piece, and the next checks belong to the 
    stream, the same early-vs-late trick that already worked for the slave.
 3. If the SWR clock turns out to be the trigger, the fix belongs in `lpass-tx-macro` (hold the SWR clock while a
    capture stream is active) rather than in the codec or the machine driver.
+
+### 2026-11-10 (morning): the mux value was the bug, and a measurement trap
+
+- **`TX SMIC MUX0` must be 5, not 1.** The enum has a leading `Item #0 'ZERO'`, so index 1 is `SWR_MIC0`
+  while index **5 is `SWR_MIC4`** — exactly what the stock `mixer_paths.xml` sets for `amic2`. With 5 the capture
+  path finally returns *continuous* data (RMS ~125-136 across every 0.25 s window) instead of a single power-up
+  transient followed by zeros. UCM now sets `TX SMIC MUX0 5` and `ADC2 MUX 0` (INP2 = AMIC2).
+- **A raw mixer sweep is only valid with PipeWire stopped.** The UCM `EnableSequence` re-applies its values every
+  time the device is activated, so `amixer cset` followed by `pw-record` measures the UCM's value, not the one you
+  just set — several sweeps were meaningless until repeated with
+  `systemctl --user stop pipewire wireplumber pipewire.socket pipewire-pulse.socket` and plain `arecord`.
+- **What the power-up transient looks like:** the first non-zero sample sits at about -3549 and decays smoothly
+  (`-3549, -3548, -3546, ...`), and the whole-file RMS is *always* 711 regardless of what happens in the room.
+  That is the ADC settling, never audio — do not read it as "the mic works for half a second".
+- Microphone bias: `MIC BIAS2` (`0x3023`) reads `0x10` (bits 7:6 clear = off) even with a stream running, so a
+  temporary `snd_soc_dapm_force_enable_pin()` on `MIC BIAS1/2/3` in the codec probe is installed to keep the analog
+  front end alive (`0x3023` then reads `0x50`). Whether DAPM powers it by itself once the route is correct is still
+  unverified.
+- Still open: the captured level is flat (~125, peak ~930) and did not react to a 1 kHz tone played through the
+  speakers — but that test cannot be trusted because the speakers were never confirmed to be playing. The next test
+  is acoustic: speak into the tablet and check that the RMS rises.
