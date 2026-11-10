@@ -1,17 +1,16 @@
 diff --git a/drivers/power/supply/qcom_pmi632_charger.c b/drivers/power/supply/qcom_pmi632_charger.c
-index 9a0923d8f..9db9dc9dc 100644
+index 9a0923d8f..d4ca01531 100644
 --- a/drivers/power/supply/qcom_pmi632_charger.c
 +++ b/drivers/power/supply/qcom_pmi632_charger.c
-@@ -75,6 +75,8 @@ struct pmi632_chg {
+@@ -75,6 +75,7 @@ struct pmi632_chg {
  	struct delayed_work poll_work;
  	unsigned int last_online;
  	unsigned int last_state;
-+	int last_usb_type;
 +	u16 dbg_reg;
  };
  
  static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
-@@ -82,6 +84,17 @@ static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
+@@ -82,6 +83,17 @@ static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
  	return regmap_read(chip->regmap, chip->base + reg, val);
  }
  
@@ -29,7 +28,7 @@ index 9a0923d8f..9db9dc9dc 100644
  static int pmi632_online(struct pmi632_chg *chip, int *online)
  {
  	unsigned int rt;
-@@ -217,6 +230,39 @@ static int pmi632_get_step(struct pmi632_chg *chip, u16 reg, int *val)
+@@ -217,6 +229,39 @@ static int pmi632_get_step(struct pmi632_chg *chip, u16 reg, int *val)
  	return 0;
  }
  
@@ -69,7 +68,7 @@ index 9a0923d8f..9db9dc9dc 100644
  static int pmi632_get_property(struct power_supply *psy,
  			       enum power_supply_property psp,
  			       union power_supply_propval *val)
-@@ -252,6 +298,82 @@ static int pmi632_get_property(struct power_supply *psy,
+@@ -252,6 +297,82 @@ static int pmi632_get_property(struct power_supply *psy,
  	}
  }
  
@@ -152,7 +151,7 @@ index 9a0923d8f..9db9dc9dc 100644
  static const enum power_supply_property pmi632_props[] = {
  	POWER_SUPPLY_PROP_ONLINE,
  	POWER_SUPPLY_PROP_STATUS,
-@@ -273,6 +395,8 @@ static const struct power_supply_desc pmi632_psy_desc = {
+@@ -273,6 +394,8 @@ static const struct power_supply_desc pmi632_psy_desc = {
  	.properties = pmi632_props,
  	.num_properties = ARRAY_SIZE(pmi632_props),
  	.get_property = pmi632_get_property,
@@ -161,7 +160,7 @@ index 9a0923d8f..9db9dc9dc 100644
  };
  
  /* No interrupts yet: poll and notify userspace when plug or charge state change */
-@@ -287,6 +411,25 @@ static void pmi632_poll(struct work_struct *work)
+@@ -287,6 +410,30 @@ static void pmi632_poll(struct work_struct *work)
  	rt &= USBIN_PLUGIN_RT_STS;
  	stat &= CHGR_STATUS_MASK;
  
@@ -170,24 +169,29 @@ index 9a0923d8f..9db9dc9dc 100644
 +	 * следим за его изменением, а не только за фактом втыкания. */
 +	if (rt) {
 +		int type = POWER_SUPPLY_USB_TYPE_UNKNOWN;
++		unsigned int icl = 0;
++		int want;
 +
-+		if (!pmi632_get_usb_type(chip, &type) && type != chip->last_usb_type) {
-+			chip->last_usb_type = type;
-+			if (type == POWER_SUPPLY_USB_TYPE_DCP ||
-+			    type == POWER_SUPPLY_USB_TYPE_CDP)
-+				pmi632_set_step(chip, USBIN_ICL_CFG, 3000000);
-+			else if (type == POWER_SUPPLY_USB_TYPE_SDP)
-+				pmi632_set_step(chip, USBIN_ICL_CFG, 500000);
-+			dev_info(chip->dev, "источник %d: ICL выставлен по типу\n", type);
++		pmi632_get_usb_type(chip, &type);
++		/* 500 мА только для порта компьютера (SDP), всем остальным
++		 * даём 3 А — AICL снизит ток, если адаптер слабый. Тип может
++		 * определиться позже, поэтому сверяем каждый опрос. */
++		/* Порт компьютера (SDP) — 500 мА по спецификации USB, всё
++		 * остальное (DCP/CDP и неопределённый источник) — 3 А; AICL
++		 * снизит ток сам, если адаптер слабый или кабель тонкий. */
++		want = (type == POWER_SUPPLY_USB_TYPE_SDP) ? 500000 : 3000000;
++		pmi632_read(chip, USBIN_ICL_CFG, &icl);
++		if (icl * PMI632_CURRENT_STEP_UA != want) {
++			dev_info(chip->dev, "тип %d: ICL %u -> %d uA\n",
++				 type, icl * PMI632_CURRENT_STEP_UA, want);
++			pmi632_set_step(chip, USBIN_ICL_CFG, want);
 +		}
-+	} else {
-+		chip->last_usb_type = POWER_SUPPLY_USB_TYPE_UNKNOWN;
 +	}
 +
  	if (rt != chip->last_online || stat != chip->last_state) {
  		chip->last_online = rt;
  		chip->last_state = stat;
-@@ -340,6 +483,8 @@ static int pmi632_probe(struct platform_device *pdev)
+@@ -340,6 +487,8 @@ static int pmi632_probe(struct platform_device *pdev)
  	cfg.drv_data = chip;
  	cfg.fwnode = dev_fwnode(dev);
  	chip->psy = devm_power_supply_register(dev, &pmi632_psy_desc, &cfg);

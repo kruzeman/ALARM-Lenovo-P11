@@ -236,3 +236,25 @@ Two independent facts settle it:
 So 5 V is the ceiling for this tablet. Charging power with the new `ICL`/`FCC` controls is ~2.4 A at 5 V (~12 W) instead
 of the previous ~5 W; there is no path to 9 V/18 W without different charging hardware. `pd-disable` is back in the DT
 and the tablet runs the 5 V image.
+
+### Correction: the tablet supports Quick Charge 3.0, not USB-PD
+
+Lenovo's spec for the TB-J606F says: *"Integrated Li-Polymer 7500 mAh (minimum) / 7700 mAh (typical) battery, supports
+Quick Charge 3.0 (charge up to 80 % in 2 hr)"*. That fits the register evidence exactly: PMI632 does speak **HVDCP**
+(QC2/QC3) — `CMD_HVDCP_2_REG` with `FORCE_9V` / `FORCE_12V`, and `USBIN_ADAPTER_ALLOW` = `5V_OR_9V_TO_12V` — but that
+path requires a *Qualcomm QC adapter* that raises VBUS only after the charger asks for it over D+/D-. Qualcomm's own
+driver therefore skips the PD allowance path for this PMIC (`smblib_set_usb_pd_allowed_voltage()` returns 0 for
+`PMI632_SUBTYPE`).
+
+Consequence: a **PD-only** adapter (like the IdeaPad 65 W one) raises VBUS to 9 V on its own, the charger sees 9 V
+without having enabled HVDCP and trips `USBIN_OV` — that is what we measured. With a **QC3.0 charger** the same 9 V
+should be accepted, because the handshake goes through the charger's own state machine.
+
+So 9 V is not closed for good — it needs (a) a QC3.0 adapter to test with, and (b) HVDCP support in
+`qcom_pmi632_charger`: set `USBIN_ADAPTER_ALLOW` to `5V_OR_9V_TO_12V`, enable `HVDCP_EN` in `USBIN_OPTIONS_1`, and
+request the higher voltage through `CMD_HVDCP_2` (`FORCE_9V`). The `reg` debug attribute added to the driver lets us
+try those writes live without rebuilding.
+
+Also note: with the tablet plugged into a **PC** port the chip reports `APSD_SDP` and the driver correctly limits the
+input to 500 mA; measured charge from a laptop port is ~0.7 A. The 3 A setting applies to DCP/CDP and to an
+undetermined source.
