@@ -1,0 +1,5 @@
+
+# Загрузочные образы — только в Releases, не в git
+boot-*.img
+dtb-*.img
+initramfs-*.img
