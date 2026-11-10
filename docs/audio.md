@@ -418,3 +418,20 @@ one test run measured `TX SMIC MUX0 = 9` and recorded silence.
 
 **Confirmed by the operator** on 2026-11-10: a recording made through PipeWire's default source was played back to
 him and he confirmed his voice is audible and clear (RMS moving 19 -> 3600 with speech, peak ~8.2k).
+
+### Second microphone: not on the codec, it has to be a SoC DMIC (open)
+
+Where the second capture channel could live, and what was measured with the operator speaking into the tablet:
+
+- **Analog inputs (codec).** `ADC1`/`AMIC1` is the working built-in mic (`TX SMIC MUX0 = 1`). Sweeping every macro
+  `TX SMIC MUX0` item 2..9 with `ADC1`, `ADC2` and `ADC3` all powered produced only power-up transients and zeros —
+  so `AMIC2`, `AMIC3` and `ADC3` carry no live signal on this board.
+- **Codec DMIC inputs.** `DMIC0..5 Switch` on with `TX SMIC MUX0 = ZERO` and `TX DMIC MUX0` swept over 1..6 gives no
+  data at all: the stream does not even fill a 0.25 s window, so the DSP never receives frames.
+- **Port map in the codec** (`wcd937x_sdw_tx_ch_info`): port 1 = ADC1, port 2 = ADC2 + ADC3, port 3 = DMIC0/1/MBHC/
+  DMIC2/3, port 4 = DMIC4/5/6. `tx-port-mapping = <1 2 3 4>` already covers all four.
+
+Conclusion: the second microphone is a digital mic wired to the **SoC DMIC interface** (bengal has its own LPASS DMIC),
+not to the codec. Capturing it needs a separate DAI link (the `q6dsp-dmic` front-end) plus the matching routing, which
+is a DTS change and a new boot image — deliberately left as a separate piece of work, because the mono capture already
+works and is used for voice.
