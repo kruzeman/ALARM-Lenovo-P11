@@ -211,3 +211,28 @@ voltage to expect and the OV/allow configuration is done before the voltage rise
 
 Rolled back to the 5 V image (`boot-txmac2.img`): with the new ICL/FCC setters the port pulls ~2.4 A at 5 V, which is
 already ~12 W instead of the previous ~5 W.
+
+### Conclusion on 9 V: PMI632 cannot take it from a PD source
+
+Register dump at 9 V (our driver's `reg` debug attribute, offsets relative to `0x1000`):
+
+```
+0x308 = 0x8    APSD_DCP, adapter recognised as DCP
+0x370 = 0x3c   3 A configured by us
+0x106 = 0x3c   3 A accepted as the maximum
+0x107 = 0x0    effective input current 0
+0x310 = 0x18   USBIN_PLUGIN + USBIN_OV (BIT(3))
+0x360 = 0x3    read back after writing 0x07 — the allowance field is masked
+0x10b = 0x13   power path sees a valid input
+```
+
+Two independent facts settle it:
+
+1. `USBIN_OV` is set and `USBIN_ADAPTER_ALLOW` cannot raise the threshold — the field reads back as `0x3` whatever we write
+   (`0x07`, `0x0c`), so the over-voltage comparator is fixed in hardware at a 5 V-style level.
+2. Qualcomm's own driver skips the whole PD allowance path for this PMIC:
+   `smblib_set_usb_pd_allowed_voltage()` starts with `if (chg->chg_param.smb_version == PMI632_SUBTYPE) return 0;`.
+
+So 5 V is the ceiling for this tablet. Charging power with the new `ICL`/`FCC` controls is ~2.4 A at 5 V (~12 W) instead
+of the previous ~5 W; there is no path to 9 V/18 W without different charging hardware. `pd-disable` is back in the DT
+and the tablet runs the 5 V image.

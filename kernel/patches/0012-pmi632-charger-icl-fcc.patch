@@ -1,16 +1,17 @@
 diff --git a/drivers/power/supply/qcom_pmi632_charger.c b/drivers/power/supply/qcom_pmi632_charger.c
-index 9a0923d8f..87652edbc 100644
+index 9a0923d8f..9db9dc9dc 100644
 --- a/drivers/power/supply/qcom_pmi632_charger.c
 +++ b/drivers/power/supply/qcom_pmi632_charger.c
-@@ -75,6 +75,7 @@ struct pmi632_chg {
+@@ -75,6 +75,8 @@ struct pmi632_chg {
  	struct delayed_work poll_work;
  	unsigned int last_online;
  	unsigned int last_state;
 +	int last_usb_type;
++	u16 dbg_reg;
  };
  
  static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
-@@ -82,6 +83,17 @@ static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
+@@ -82,6 +84,17 @@ static int pmi632_read(struct pmi632_chg *chip, u16 reg, unsigned int *val)
  	return regmap_read(chip->regmap, chip->base + reg, val);
  }
  
@@ -28,7 +29,7 @@ index 9a0923d8f..87652edbc 100644
  static int pmi632_online(struct pmi632_chg *chip, int *online)
  {
  	unsigned int rt;
-@@ -217,6 +229,39 @@ static int pmi632_get_step(struct pmi632_chg *chip, u16 reg, int *val)
+@@ -217,6 +230,39 @@ static int pmi632_get_step(struct pmi632_chg *chip, u16 reg, int *val)
  	return 0;
  }
  
@@ -68,7 +69,7 @@ index 9a0923d8f..87652edbc 100644
  static int pmi632_get_property(struct power_supply *psy,
  			       enum power_supply_property psp,
  			       union power_supply_propval *val)
-@@ -252,6 +297,34 @@ static int pmi632_get_property(struct power_supply *psy,
+@@ -252,6 +298,82 @@ static int pmi632_get_property(struct power_supply *psy,
  	}
  }
  
@@ -100,10 +101,58 @@ index 9a0923d8f..87652edbc 100644
 +	}
 +}
 +
++
++static ssize_t reg_show(struct device *dev, struct device_attribute *a, char *buf)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct pmi632_chg *chip = power_supply_get_drvdata(psy);
++	unsigned int val = 0;
++	int ret;
++
++	ret = pmi632_read(chip, chip->dbg_reg, &val);
++	if (ret)
++		return ret;
++
++	return sysfs_emit(buf, "reg %#x = %#x\n", chip->base + chip->dbg_reg, val);
++}
++
++static ssize_t reg_store(struct device *dev, struct device_attribute *a,
++			 const char *buf, size_t count)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct pmi632_chg *chip = power_supply_get_drvdata(psy);
++	unsigned int reg = 0, val = 0, mask = 0xff;
++	int parsed;
++
++	parsed = sscanf(buf, "%x %x %x", &reg, &val, &mask);
++	if (parsed < 1)
++		return -EINVAL;
++
++	/* Одно число — только выбрать регистр для чтения. */
++	if (parsed == 1) {
++		chip->dbg_reg = reg;
++		return count;
++	}
++
++	chip->dbg_reg = reg;
++	/* chip->base уже учтён в pmi632_masked_write/read, поэтому reg
++	 * трактуется как смещение внутри блока зарядника (0x000..0x7ff). */
++	if (parsed == 2 && mask == 0xff) {
++		pmi632_write(chip, reg, val);
++	} else {
++		pmi632_masked_write(chip, reg, mask, val);
++	}
++
++	dev_info(chip->dev, "reg %#x <- %#x (mask %#x)\n", reg, val, mask);
++	return count;
++}
++
++static DEVICE_ATTR_RW(reg);
++
  static const enum power_supply_property pmi632_props[] = {
  	POWER_SUPPLY_PROP_ONLINE,
  	POWER_SUPPLY_PROP_STATUS,
-@@ -273,6 +346,8 @@ static const struct power_supply_desc pmi632_psy_desc = {
+@@ -273,6 +395,8 @@ static const struct power_supply_desc pmi632_psy_desc = {
  	.properties = pmi632_props,
  	.num_properties = ARRAY_SIZE(pmi632_props),
  	.get_property = pmi632_get_property,
@@ -112,7 +161,7 @@ index 9a0923d8f..87652edbc 100644
  };
  
  /* No interrupts yet: poll and notify userspace when plug or charge state change */
-@@ -287,6 +362,25 @@ static void pmi632_poll(struct work_struct *work)
+@@ -287,6 +411,25 @@ static void pmi632_poll(struct work_struct *work)
  	rt &= USBIN_PLUGIN_RT_STS;
  	stat &= CHGR_STATUS_MASK;
  
@@ -138,3 +187,12 @@ index 9a0923d8f..87652edbc 100644
  	if (rt != chip->last_online || stat != chip->last_state) {
  		chip->last_online = rt;
  		chip->last_state = stat;
+@@ -340,6 +483,8 @@ static int pmi632_probe(struct platform_device *pdev)
+ 	cfg.drv_data = chip;
+ 	cfg.fwnode = dev_fwnode(dev);
+ 	chip->psy = devm_power_supply_register(dev, &pmi632_psy_desc, &cfg);
++	if (!IS_ERR(chip->psy))
++		device_create_file(&chip->psy->dev, &dev_attr_reg);
+ 	if (IS_ERR(chip->psy))
+ 		return dev_err_probe(dev, PTR_ERR(chip->psy),
+ 				     "failed to register power supply\n");
