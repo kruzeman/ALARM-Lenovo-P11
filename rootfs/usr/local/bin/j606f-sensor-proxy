@@ -75,39 +75,9 @@ def read_lux():
     return float(m.group(1))
 
 
-
-KWIN_MARKER = "/run/j606f-sensor-proxy.kwin-nudged"
-
-
-def nudge_kwin():
-    """KWin запоминает наличие датчика в момент своего старта.
-
-    Если сессия поднялась раньше, чем SSC отдал первый люкс, KWin считает, что
-    датчика нет, и автояркость не работает до перезапуска композитора. Поэтому
-    при первом успешном замере один раз перезапускаем KWin (маркер — на загрузку).
-    """
-    if os.path.exists(KWIN_MARKER):
-        return
-    try:
-        open(KWIN_MARKER, "w").close()
-    except OSError:
-        pass
-    if subprocess.run(["pgrep", "-f", "kwin_wayland"], capture_output=True).returncode != 0:
-        return
-    env = dict(os.environ)
-    env["XDG_RUNTIME_DIR"] = "/run/user/1001"
-    env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1001/bus"
-    rc = subprocess.run(
-        ["runuser", "-u", "user", "--", "systemctl", "--user",
-         "restart", "plasma-kwin_wayland.service"],
-        env=env, capture_output=True, timeout=30).returncode
-    log(f"датчик появился позже сессии, KWin перезапущен (rc={rc})")
-
 def poll_loop(connection):
     while True:
         lux = read_lux()
-        if lux is not None:
-            nudge_kwin()
         if lux is not None and (FAKE_LUX is not None or abs(lux - state["light"]) >= max(1.0, state["light"] * 0.1)):
             state["light"] = lux
             if state["claimed"]:
