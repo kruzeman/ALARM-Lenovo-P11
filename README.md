@@ -23,7 +23,7 @@ fixes, a libcamera patch for the cameras, a minimal initramfs and the Arch-side 
 | Speakers (4× AW88258) | ✅ | PRIMARY_TDM_RX_0, stereo, UCM profile |
 | USB-C / headset | ⚠️ | WCD937x + SoundWire come up, but the analogue path goes through an FSA4480 switch — not implemented |
 | Cameras (OV13B10 + S5K4H7) | ⚠️ | both capture; front orientation fixed in DT, rear has no autofocus |
-| Built-in microphones (ES7210) | ❌ | codec driver is ready, the DSP rejects the TDM-TX port (`-22`), see `docs/audio.md` |
+| Built-in microphones (WCD9370, SoundWire) | ✅ | mono from `ADC1`/`AMIC1` through the TX macro (`TX SMIC MUX0 = SWR_MIC0`, `TX_DEC0` +28 dB); the second (right) mic needs a SoC DMIC link, see `docs/audio.md` |
 | Suspend (`s2idle`) | ✅ | wake with Power; lid-close suspend via `j606f-lid` (Hall sensor, gpiochip0 line 36) |
 | Auto-rotate | ✅ | `j606f-autorotate` daemon on top of `ssccli` (SSC/ADSP) |
 | Login screen | ✅ | SDDM greeter on Xorg (rotate via `xrandr`), Plasma session on Wayland |
@@ -34,8 +34,7 @@ fixes, a libcamera patch for the cameras, a minimal initramfs and the Arch-side 
 ## Prebuilt image
 
 [Releases](../../releases) contain a tested boot image (`boot-arch-j606f-good.img`): sound (speakers),
-Wi-Fi, Bluetooth, touch, pogo dock, cameras, suspend and auto-rotate work; the ES7210 microphones are
-disabled. Flash it with:
+Wi-Fi, Bluetooth, touch, pogo dock, cameras, suspend, auto-rotate and the built-in microphone (mono) work. Flash it with:
 
 ```bash
 fastboot flash boot_b boot-arch-j606f-good.img
@@ -77,10 +76,11 @@ docs/               per-device notes (English; Russian under docs/ru/): install,
 
 ## Known issues
 
-- **Microphones**: the DSP answers `AFE enable for port 0x9001 failed -22` for every port configuration
-  tried (2/4 channels, slot masks `0x3`/`0xF`, with and without a channel map). Next step is to compare
-  against the ADSP firmware's AFE port table and to check whether the mics actually sit on the second
-  LPASS bus (`lpi_i2s2_*` exists in the stock DT next to the `lpass-tdm1-*` pins used by the speakers).
+- **Microphones**: the left built-in mic works (mono, `ADC1`/`AMIC1` over SoundWire). The right one on the
+  same top edge does not show up on any codec input (`ADC2`/`ADC3`, `AMIC2`/`AMIC3`, codec DMIC) and has to be a
+  digital mic on the SoC's own DMIC interface — it needs a `q6dsp-dmic` DAI link and a new boot image.
+- **Was a dead end**: the ES7210 / `PRIMARY_TDM_TX_0` theory. The DSP rejects that port (`-22`) for every
+  configuration, and the built-in mics do not go through it at all — see `docs/audio.md`.
 - **Rear camera**: no autofocus (libcamera's simple pipeline has no AF for this sensor). The `dw9719` VCM
   can be driven by hand through `/dev/v4l-subdev*` (`focus_absolute`), but it is only powered while
   streaming.
