@@ -393,3 +393,25 @@ So the codec driver is not the missing piece, and the next checks belong to the 
 - Still open: the captured level is flat (~125, peak ~930) and did not react to a 1 kHz tone played through the
   speakers — but that test cannot be trusted because the speakers were never confirmed to be playing. The next test
   is acoustic: speak into the tablet and check that the RMS rises.
+
+### Solved: the built-in mics are on ADC1 (AMIC1), not ADC2
+
+Measured with the operator speaking into the tablet while four inputs were swept in one run at `TX_DEC0 Volume`
+104 (+20 dB):
+
+| config | result |
+|---|---|
+| `TX SMIC MUX0 = 5`, `ADC2 MUX = 0` (INP2 / AMIC2) | power-up transient, then silence |
+| `TX SMIC MUX0 = 5`, `ADC2 MUX = 1` (INP3 / AMIC3) | silence |
+| `TX SMIC MUX0 = 1` with `ADC1` switches on | **live audio**, RMS moving between 19 and 251 with speech |
+| `TX SMIC MUX0 = 4` with `ADC1` | transient, then silence |
+
+So the capture path is: codec **ADC1 <- AMIC1** -> TX port 1 of the slave -> master port 1 -> macro input
+`SWR_MIC0` (**`TX SMIC MUX0 = 1`**) -> `TX DEC0 MUX = SWR_MIC` -> `TX_AIF1_CAP Mixer DEC0` -> CDC DMA TX3 -> DSP.
+The stock `mixer_paths.xml` `amic2` path does not describe this board's built-in mics.
+
+The UCM `Mic` device now enables `ADC1 Switch`, `ADC1_MIXER Switch`, `ADC1 REQ Switch` and sets
+`TX SMIC MUX0 1` / `TX DEC0 MUX 1` / `TX_AIF1_CAP Mixer DEC0 1`. Note that a UCM `EnableSequence` runs when the
+*device* is created, so after editing the file the node has to be recreated (reboot, or stop WirePlumber and let the
+card be re-probed) — restarting WirePlumber alone leaves an already-created node with the old values, which is how
+one test run measured `TX SMIC MUX0 = 9` and recorded silence.
