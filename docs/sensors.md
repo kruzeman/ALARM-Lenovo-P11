@@ -81,3 +81,16 @@ light` fails and the bridge publishes 0 lux (auto-brightness dies silently); wit
 (`adspr`, `adspua`, `cdspr`) plus `pd-mapper` running, the ADSP drops into `Handover signaled, but it already
 happened` and takes Wi-Fi with it. Getting the file: `mount /dev/disk/by-partlabel/modem_a /mnt/fw`, copy
 `/mnt/fw/image/adsps.jsn`, `umount`, then `systemctl restart hexagonrpcd-adsp-sensorspd j606f-sensor-proxy`.
+
+### Auto-brightness: KWin must see the sensor before the session starts
+
+Measured with the default KWin curve on 2026-11-10: 0 lux -> 30 %, ~10 lux -> 30 %, 84 lux -> 80 %,
+116 lux -> 80 % (saturated). So the default curve already behaves sanely; a custom `autoBrightnessCurve` is optional.
+
+The failure mode to know about: **KWin checks for `net.hadess.SensorProxy` once, when it starts.** On this device the
+SSC sensor service appears ~40 s after boot, so if Plasma comes up first, KWin caches "no light sensor" and
+auto-brightness stays dead for the whole session even though the proxy reports `HasAmbientLight=true` and correct lux
+values afterwards. Restarting `plasma-kwin_wayland` fixes it instantly, which is what `j606f-sensor-proxy` now does by
+itself: on the first successful reading it restarts the compositor once per boot (marker file
+`/run/j606f-sensor-proxy.kwin-nudged`). Ordering the units differently would be cleaner, but the sensor lives on the
+ADSP and its readiness is not something systemd can express.
