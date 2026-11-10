@@ -1,0 +1,50 @@
+diff --git a/sound/soc/qcom/qdsp6/q6dsp-lpass-clocks.c b/sound/soc/qcom/qdsp6/q6dsp-lpass-clocks.c
+index 03838582a..8e07659d6 100644
+--- a/sound/soc/qcom/qdsp6/q6dsp-lpass-clocks.c
++++ b/sound/soc/qcom/qdsp6/q6dsp-lpass-clocks.c
+@@ -38,6 +38,11 @@ static int clk_q6dsp_prepare(struct clk_hw *hw)
+ 	struct q6dsp_clk *clk = to_q6dsp_clk(hw);
+ 	struct q6dsp_cc *cc = dev_get_drvdata(clk->dev);
+ 
++	/* При перезапуске ADSP провайдер клоков переподвешивается раньше, чем
++	 * завершится его probe, поэтому drvdata ещё NULL. */
++	if (!cc || !cc->desc)
++		return -ENODEV;
++
+ 	return cc->desc->lpass_set_clk(clk->dev, clk->q6dsp_clk_id, clk->attributes,
+ 				     Q6DSP_LPASS_CLK_ROOT_DEFAULT, clk->rate);
+ }
+@@ -47,6 +52,10 @@ static void clk_q6dsp_unprepare(struct clk_hw *hw)
+ 	struct q6dsp_clk *clk = to_q6dsp_clk(hw);
+ 	struct q6dsp_cc *cc = dev_get_drvdata(clk->dev);
+ 
++	/* см. clk_q6dsp_prepare(): drvdata может быть ещё NULL. */
++	if (!cc || !cc->desc)
++		return;
++
+ 	cc->desc->lpass_set_clk(clk->dev, clk->q6dsp_clk_id, clk->attributes,
+ 			      Q6DSP_LPASS_CLK_ROOT_DEFAULT, 0);
+ }
+@@ -88,6 +97,11 @@ static int clk_vote_q6dsp_block(struct clk_hw *hw)
+ 	struct q6dsp_clk *clk = to_q6dsp_clk(hw);
+ 	struct q6dsp_cc *cc = dev_get_drvdata(clk->dev);
+ 
++	/* При перезапуске ADSP провайдер клоков переподвешивается раньше, чем
++	 * завершится его probe, поэтому drvdata ещё NULL. */
++	if (!cc || !cc->desc)
++		return -ENODEV;
++
+ 	return cc->desc->lpass_vote_clk(clk->dev, clk->q6dsp_clk_id,
+ 				  clk_hw_get_name(&clk->hw), &clk->handle);
+ }
+@@ -97,6 +111,10 @@ static void clk_unvote_q6dsp_block(struct clk_hw *hw)
+ 	struct q6dsp_clk *clk = to_q6dsp_clk(hw);
+ 	struct q6dsp_cc *cc = dev_get_drvdata(clk->dev);
+ 
++	/* см. clk_q6dsp_prepare(): drvdata может быть ещё NULL. */
++	if (!cc || !cc->desc)
++		return;
++
+ 	cc->desc->lpass_unvote_clk(clk->dev, clk->q6dsp_clk_id, clk->handle);
+ }
+ 
