@@ -435,3 +435,25 @@ Conclusion: the second microphone is a digital mic wired to the **SoC DMIC inter
 not to the codec. Capturing it needs a separate DAI link (the `q6dsp-dmic` front-end) plus the matching routing, which
 is a DTS change and a new boot image — deliberately left as a separate piece of work, because the mono capture already
 works and is used for voice.
+
+### CrashDump 2026-11-10 13:20: SMMU context fault from the QUP0 wrapper
+
+`console-ramoops-0` survived this time, and the reason is:
+
+```
+[61.795089] arm-smmu c600000.iommu: Unhandled context fault: fsr=0x402, iova=0xfff1ac40, fsynr=0x3, cbfrsynra=0xe3, cb=4
+[61.797489] arm-smmu c600000.iommu: FSR = 00000402 [Format=2 PF], SID=0xe3
+```
+
+- `SID=0xe3` is **`qupv3_id_0` / `geniqup@4ac0000`** (`sm6115.dtsi`) — the wrapper hosting `i2c0` and `i2c1`: the pogo
+  touchpad at `0x60`, the pogo keyboard at `0x61`, the speaker amplifiers, and the GENI DMA engines.
+- `FSR 0x402 [Format=2 PF]` is a *permission* fault: a device in that wrapper DMA'd to an address not mapped for it
+  (`iova=0xfff1ac40`). The kernel cannot recover, so the tablet lands in Qualcomm CrashDump mode.
+- Nothing useful sits between 47.3 s (`himax_fb_register`) and the fault at 61.8 s — the pstore console is truncated and
+  partly overwritten, so the trigger has to be established by experiment.
+
+The pogo keyboard/touchpad is the prime suspect: both hang off this wrapper, the touchpad already returns a broken HID
+descriptor and `GPI transfer failed: -5`, and **detaching the keyboard does not unbind the device** — `i2c_hid_of`
+stays bound to `1-0061` with the accessory physically removed, which is exactly the situation that produces a stale
+GPI DMA buffer and a permission fault. Operator confirmed the keyboard was attached at the time of the crash.
+Experiment in progress: run without the pogo keyboard and see whether the crash recurs.
