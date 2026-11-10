@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
-index de6ab73aa..fcc01f623 100644
+index de6ab73aa..03d6900d8 100644
 --- a/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
 +++ b/arch/arm64/boot/dts/qcom/sm6115p-lenovo-j606f-common.dtsi
 @@ -6,6 +6,7 @@
@@ -32,19 +32,3 @@ index de6ab73aa..fcc01f623 100644
  		/* stock bt_wcn3990: io = L9, core = L17, pa = L23, xtal = L16 */
  		vddio-supply = <&pm6125_l9>;
  		vddxo-supply = <&pm6125_l16>;
-@@ -381,7 +388,14 @@ connector {
- 			self-powered;
- 
- 			typec-power-opmode = "default";
--			pd-disable;
-+
-+			/* PD включён: 5 В/3 А и 9 В/2 А как sink, 5 В/1.5 А как source
-+			 * (power-role = "dual" требует source-pdos, иначе tcpm -EINVAL). */
-+			sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)
-+				     PDO_FIXED(9000, 2000, PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)>;
-+			op-sink-microwatt = <18000000>;
-+			source-pdos = <PDO_FIXED(5000, 1500, PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)>;
-+			op-src-microwatt = <7500000>;
- 
- 			ports {
- 				#address-cells = <1>;

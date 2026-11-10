@@ -183,3 +183,31 @@ register takes 3 A, AICL then settles around 2.35–2.65 A. So at 5 V the port n
 `dual`, otherwise tcpm returns `-EINVAL`). Not flashed yet; the module with the ICL setters is already installed on the
 tablet, so the open question is whether a 9 V contract now charges at all — previously the port closed the input
 because nobody could program `ICL`. Rollback: `boot-txmac2.img` (release v0.2).
+
+### 9 V (PD) tested on 2026-11-10: the charger latches USBIN over-voltage
+
+With `boot-pd.img` flashed and the IdeaPad 65 W adapter connected, PD negotiates fine — `tcpm-source-psy` reads
+`voltage_now = 9000000`, `current_now = 2000000` — but the tablet does not charge: `status = Not charging`,
+`input_current_limit` (effective, `0x107`) = 0, battery discharging at ~-0.9 A while the cable is in.
+
+Registers at that moment (our driver's debug print):
+
+```
+set 0x370: want 2000000 uA -> step 40, readback 40, effective 0, path 0x13, icl_max 40
+usbin_rt=0x18 chgr1=0x46 chgr7=0x0
+```
+
+- The config registers accept our values (`0x370 = 40`, `0x106 = 40`) — so `ICL` programming works.
+- `usbin_rt = 0x18` has `BIT(3)` set, which in SMB5/PMI632 is **`USBIN_OV_RT_STS`**: the charger sees 9 V as
+  over-voltage and shuts the input path down. `chgr1 = 0x46` (status 6 = `CHG_PAUSE`) confirms it.
+- Writing `USBIN_ADAPTER_ALLOW_CFG` (`USBIN_BASE + 0x60`, i.e. `0x1360`) — the register CAF uses to permit
+  `5V_OR_9V_TO_12V` — does not help: with `0x07` it reads back `0x7` and with `0x0c` it reads back `0x4`, and the OV
+  bit stays set, also after unplug/replug.
+
+Why: upstream splits the Type-C/PD stack (`tcpm` + `fusb302`) from the charger driver, so the charger never learns
+that PD raised VBUS to 9 V. In CAF's `smb5-lib` the two are coupled — the PD state machine tells the charger which
+voltage to expect and the OV/allow configuration is done before the voltage rises. Doing that here means wiring a
+`usb_pd` notifier into `qcom_pmi632_charger`, which is a separate piece of work.
+
+Rolled back to the 5 V image (`boot-txmac2.img`): with the new ICL/FCC setters the port pulls ~2.4 A at 5 V, which is
+already ~12 W instead of the previous ~5 W.
