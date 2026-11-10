@@ -283,3 +283,14 @@ double the previous best.
 clears the register after sending the pulse train, but the adapter stays at 5 V (`0x310 = 0x10`, no change in current).
 Since we are already at the chip's AICL ceiling (2.35 A) and the battery is in its taper region, 9 V would add little;
 if more is needed the next lever is the continuous AICL threshold, not the voltage.
+
+### QC 3.0 is detected; 9 V still does not engage at 83 % SoC
+
+After re-plugging the Xiaomi adapter the chip reports `0x308 = 0x48` — `APSD_DCP | QC_3P0`, i.e. a **Quick Charge 3.0**
+adapter, unlike the earlier `0x28` (QC 2.0). Charging is steady at ICL 2.0 A, 2.1 A into the battery, no OV.
+
+Writing `CMD_HVDCP_2` = `FORCE_9V` (and stepping `SINGLE_INCREMENT` four times) is accepted by the chip — it clears the
+command register after issuing the pulses — but the adapter stays at 5 V: the effective limit and the battery current do
+not move. The plausible reason is the one the operator suggested: at 83 % the charger does not need the extra headroom,
+so the QC state machine never steps up. Worth retrying at ~50-60 % SoC, where the demand is higher; the whole test needs
+no rebuild — `echo "343 10 10" > .../reg` and read `0x310` / `0x107`.
