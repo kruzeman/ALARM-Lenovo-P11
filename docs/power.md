@@ -317,3 +317,64 @@ auth + autonomous mode on, 46 % SoC).
 Note for future work: `reg` debug attribute writes are unconditional — a two-value write `"061 3c"` sets a register.
 Reading needs exactly one value (`"061"`), otherwise a write happens. One such slip (FCC set to 0x0f = 750 mA) was
 noticed and reverted within a minute; FCC is back at 0x3c.
+
+### Second charger: SMB1355 found on the I2C bus
+
+The stock device tree contains a parallel charger that mainline does not know about:
+
+```
+qcom,smb1355@c      (i2c@4a84000 = SE1 = i2c1, address 0x0c, IRQ GPIO 69)
+  qcom,smb1355-charger@1000  compatible = "qcom,smb1355", qcom,parallel-mode = <1>
+  periph-map = <0x10 0x12 0x13 0x16>
+```
+
+The chip is alive and answers on the bus. Register map taken from the CAF driver (`smb1355-charger.c`) was validated by
+two independent status registers agreeing with each other:
+
+```
+0x100B (BATTERY_STATUS_2)     = 0x08 -> DISABLE_CHARGING = 1
+0x1042 (CHARGING_ENABLE_CMD)  = 0x00 -> charging command not set
+0x1061 (FAST_CHARGE_CURRENT)  = 0x00
+0x1070 (BATTOV_CFG) = 0xc8, 0x1053 (CFG) = 0x11, 0x1051 (CHGR_CFG2) = 0x18
+```
+
+So the second charger is simply **disabled**: nobody enables it, because the node and the driver are missing.
+
+**Manual experiment** (0.5 A request, PMI632 left untouched):
+
+```
+write 0x1061 = 0x0a   (10 x 50 mA)
+write 0x1042 = 0x01   (charging enable)
+-> 0x100B = 0x03 (DISABLE_CHARGING cleared), 0x100C = 0x12 (BATT_GT_PRE_TO_FAST set)
+-> battery current 3.027 A -> 3.073 A (+46 mA), temperature 28.1 -> 29.0 C over three minutes
+```
+
+SMB1355 does join charging, but its contribution is tiny because the adapter is already saturated at 5 V: the total
+input is 3.07 A, and the Xiaomi QC 3.0 adapter only promises 3 A at 5 V.
+
+### Why 9 V still does not appear
+
+Two hard limits were measured, and both matter:
+
+1. **PMI632 current fields are 6-bit.** Writing 4.5 A (90 steps) reads back as 26 steps, because `90 & 0x3f = 26`.
+   The maximum is 63 x 50 mA = 3.15 A for both input current and fast-charge current. More current at 5 V is not
+   available from this chip, so the adapter can never be pushed hard enough to be forced into a higher voltage.
+2. **HVDCP increments are ignored by the adapter.** With both chargers demanding current (3.07 A, i.e. above the
+   adapter's 5 V rating), `0x360 = 0x07` (allow 5-12 V) and `0x362 = 0x6c` (HVDCP auth + autonomous) in place, six
+   `SINGLE_INCREMENT` commands to `0x343` changed nothing: `0x310` stayed `0x10` (5 V), current unchanged, no OV.
+   The command register self-clears to 0x00, so the chip accepts the command but the adapter does not move.
+
+Net result at 5 V with both chargers: **3.07 A into the battery, ~1:10 to full**, against Lenovo's claim of about
+two hours. That is already better than the stock spec.
+
+### What is needed for 20 W
+
+Not more current at 5 V, and not a bare HVDCP bit: a real SMB1355 driver. In the stock design the parallel charger
+takes part of the charge current and can negotiate a higher input voltage, so the path is:
+
+1. add the SMB1355 node to our DTS (i2c1, 0x0c, IRQ GPIO 69);
+2. port `smb1355-charger.c` from CAF, dropping `qpnp-revid`, votables and the `qcom,i2c-pmic` container;
+3. enable parallel mode and raise its fast-charge current in step with PMI632 under temperature control.
+
+Only after that does 9 V make sense: at 9 V and ~2.2 A the input is ~20 W, and the second charger is what can actually
+absorb it.
