@@ -457,3 +457,35 @@ descriptor and `GPI transfer failed: -5`, and **detaching the keyboard does not 
 stays bound to `1-0061` with the accessory physically removed, which is exactly the situation that produces a stale
 GPI DMA buffer and a permission fault. Operator confirmed the keyboard was attached at the time of the crash.
 Experiment in progress: run without the pogo keyboard and see whether the crash recurs.
+
+### Sound disappears after an ADSP crash (and does not come back)
+
+Observed after ~17 hours of uptime: PipeWire showed only a `Dummy Output` sink and no sources, while the ALSA card was
+still registered. The kernel log for that boot explains it:
+
+```
+[61775.288] remoteproc remoteproc1: crash detected in adsp: type fatal error
+[61775.288] remoteproc remoteproc1: handling crash #1 in adsp
+[61782.289] remoteproc remoteproc1: recovering adsp  ->  adsp is now up
+[61783.389] qcom-soundwire a740000.soundwire: swrm_wait_for_wr_fifo_avail err write overflow
+[61783.451] soundwire sdw-master-3-0: trf on Slave 1 failed:-5 read addr 346c count 1
+[61783.451] wcd9370-codec sdw:3:0:0217:010a:00:3: Failed to sync masks in 346c
+```
+
+Once the ADSP restarts, the SoundWire master `a740000.soundwire` stays in a broken state (write FIFO overflow, read
+underflow) and the codec stops answering, so neither a playback sink nor a capture source can be created.
+
+**Why nothing recovers it:** neither `drivers/soundwire/qcom.c` nor `sound/soc/qcom` registers a subsys notifier for
+the ADSP. Nobody re-initialises the master, the codec or the ASoC card after `SUBSYS_AFTER_POWERUP`, so the stale state
+persists until the next boot.
+
+**Current workaround:** reboot. Verified: after a reboot the codec binds again (`wcd937x_codec: bound
+sdw:2:0:0217:010a:00:4`, `sdw:3:0:0217:010a:00:3`) and both the speaker sink and the microphone source are back.
+
+**Proper fix (not implemented):** subscribe to remoteproc notifications for `adsp` and, on `SUBSYS_AFTER_POWERUP`,
+reset the SoundWire master, re-initialise the codec and re-create the card (release/attach of the soundwire master and
+the card). Order matters, otherwise the ADSP can be knocked over again.
+
+**Why the ADSP crashed is unknown:** pstore/ramoops is empty on this device and mainline has no Qualcomm SSR dumps, so
+there is no post-mortem. One fatal error in 20 hours of uptime. A likely (unconfirmed) trigger is suspend/resume with an
+active audio handover.
