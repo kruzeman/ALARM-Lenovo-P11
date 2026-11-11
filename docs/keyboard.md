@@ -36,7 +36,7 @@ evdev:name:hid-over-i2c 17EF:6103 Keyboard:*
 
 [main]
 f13 = layer(fn)
-capslock = overload(control, esc)
+back = esc
 
 [fn]
 1 = f1
@@ -69,7 +69,8 @@ Captured from the `keyd virtual keyboard` device while pressing the combinations
 ```
 
 So: **globe = Fn**, `Fn+1..0` = `F1..F10`, `Fn+-`/`Fn+=` = `F11`/`F12`, `Fn+Backspace` = `Delete`,
-`CapsLock` tap = `Esc`, `CapsLock` hold = `Ctrl` (the keyboard has no Esc at all, hence the overload).
+and the **Android "back" button = `Esc`** — it sends `KEY_BACK`, which keyd turns into Escape. CapsLock is left
+untouched (an earlier attempt bound Esc to a CapsLock overload; that was rejected in favour of the back button).
 
 ## Changing it
 

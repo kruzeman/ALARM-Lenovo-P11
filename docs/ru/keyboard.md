@@ -36,7 +36,7 @@ evdev:name:hid-over-i2c 17EF:6103 Keyboard:*
 
 [main]
 f13 = layer(fn)
-capslock = overload(control, esc)
+back = esc
 
 [fn]
 1 = f1
@@ -69,7 +69,8 @@ systemctl enable --now keyd
 ```
 
 Итого: **«глобус» = Fn**, `Fn+1..0` = `F1..F10`, `Fn+-`/`Fn+=` = `F11`/`F12`, `Fn+Backspace` = `Delete`,
-короткое нажатие `CapsLock` = `Esc`, удержание `CapsLock` = `Ctrl` (Esc на клавиатуре нет вообще, отсюда overload).
+а **андроидная кнопка «назад» = `Esc`** — она присылает `KEY_BACK`, и keyd превращает его в Escape. CapsLock
+не тронут (первый вариант вешал Esc на него через overload — от него отказались в пользу «назад»).
 
 ## Как менять
 
