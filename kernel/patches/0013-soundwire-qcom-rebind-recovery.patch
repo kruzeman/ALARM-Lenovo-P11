@@ -1,0 +1,40 @@
+diff --git a/drivers/soundwire/qcom.c b/drivers/soundwire/qcom.c
+index a6ac0064b..d3ee194b4 100644
+--- a/drivers/soundwire/qcom.c
++++ b/drivers/soundwire/qcom.c
+@@ -1624,9 +1624,14 @@ static int qcom_swrm_probe(struct platform_device *pdev)
+ 
+ 	ctrl->reg_read(ctrl, SWRM_COMP_HW_VERSION, &ctrl->version);
+ 
++	/* Do not force a trigger type here: it comes from the DT and is already
++	 * applied to the (shared) hwirq mapping. Requesting IRQF_TRIGGER_RISING
++	 * again on a re-probe makes the irqchip reject the new mapping with
++	 * "type mismatch, failed to map hwirq", after which request_irq() is
++	 * called with irq 0 and probe fails with -EINVAL. That is what made the
++	 * bus impossible to bring back after an ADSP restart. */
+ 	ret = devm_request_threaded_irq(dev, ctrl->irq, NULL,
+ 					qcom_swrm_irq_handler,
+-					IRQF_TRIGGER_RISING |
+ 					IRQF_ONESHOT,
+ 					"soundwire", ctrl);
+ 	if (ret) {
+@@ -1697,8 +1702,19 @@ static void qcom_swrm_remove(struct platform_device *pdev)
+ {
+ 	struct qcom_swrm_ctrl *ctrl = dev_get_drvdata(&pdev->dev);
+ 
++	/* The controller is almost always runtime-suspended here (autosuspend is
++	 * 3 s), which means hclk was already disabled by swrm_runtime_suspend().
++	 * Unpreparing it a second time underflows the clock refcount: the clk
++	 * core warns and the following probe fails with -EINVAL, so the bus can
++	 * never be brought back after an ADSP restart. Resume first, then the
++	 * unprepare below balances the prepare done by probe/runtime_resume. */
++	pm_runtime_get_sync(&pdev->dev);
++
+ 	sdw_bus_master_delete(&ctrl->bus);
+ 	clk_disable_unprepare(ctrl->hclk);
++
++	pm_runtime_put_noidle(&pdev->dev);
++	pm_runtime_disable(&pdev->dev);
+ }
+ 
+ static void swrm_reinit_link(struct qcom_swrm_ctrl *ctrl)
