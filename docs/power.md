@@ -294,3 +294,26 @@ command register after issuing the pulses — but the adapter stays at 5 V: the 
 not move. The plausible reason is the one the operator suggested: at 83 % the charger does not need the extra headroom,
 so the QC state machine never steps up. Worth retrying at ~50-60 % SoC, where the demand is higher; the whole test needs
 no rebuild — `echo "343 10 10" > .../reg` and read `0x310` / `0x107`.
+
+### Final result: charging reaches the platform maximum (3 A)
+
+Measured at 46-47 % SoC with the Xiaomi QC 3.0 adapter (MDY-15-ET), our driver with HVDCP enabled:
+
+```
+ICL = 3 000 000 uA (effective 0x107 = 0x3c, i.e. the chip's maximum)
+FCC = 3 000 000 uA
+battery current = 3.02 A into the cells, Vbat 4.06 -> 4.08 V, status Charging
+0x308 = 0x48 (APSD_DCP | QC_3P0), 0x310 = 0x10 (no OV), 0x362 = 0x6c (HVDCP auth + autonomous + BC1P2)
+```
+
+That is ~12.3 W into the battery and ~15 W from VBUS at 5 V — both the input current limit and the charge current
+limit are at their hardware maximum, so **9 V would not add anything**: the binding constraint is now the battery's
+own 3 A charge current, not the input power. 3 A on a 7500 mAh cell is 0.4 C, which is exactly Lenovo's claim of
+"80 % in 2 hours" for Quick Charge 3.0.
+
+Progression over the day: ~0.7-1.2 A (read-only driver) -> 2.1-2.6 A (ICL writable, HVDCP off) -> **3.0 A** (HVDCP
+auth + autonomous mode on, 46 % SoC).
+
+Note for future work: `reg` debug attribute writes are unconditional — a two-value write `"061 3c"` sets a register.
+Reading needs exactly one value (`"061"`), otherwise a write happens. One such slip (FCC set to 0x0f = 750 mA) was
+noticed and reverted within a minute; FCC is back at 0x3c.
