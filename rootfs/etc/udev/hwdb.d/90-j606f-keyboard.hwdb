@@ -1,0 +1,4 @@
+# Lenovo TB-J606F pogo keyboard: the globe (language) key reports KEY_UNKNOWN
+# with scancode 0xc0390. Turn it into F13 so keyd can use it as the Fn layer.
+evdev:name:hid-over-i2c 17EF:6103 Keyboard:*
+ KEYBOARD_KEY_c0390=f13
